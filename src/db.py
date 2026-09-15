@@ -8,7 +8,9 @@ from .models import Account, Post, ScrapeLog
 SCHEMA_SQL = """
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
-
+PRAGMA temp_store = MEMORY;
+PRAGMA cache_size = -64000;
+PRAGMA mmap_size = 268435456;
 CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY,
     platform TEXT NOT NULL,
@@ -50,11 +52,25 @@ CREATE INDEX IF NOT EXISTS idx_scrape_logs_platform_run ON scrape_logs(platform,
 """
 
 
+POST_COLS = (
+    "id", "account_id", "platform", "username",
+    "platform_post_id", "caption", "media_url",
+    "likes", "comments", "views", "posted_at", "scraped_at"
+)
+
+SUMMARY_COLS = (
+    "total_posts", "total_likes", "avg_likes", "total_comments",
+    "avg_comments", "total_views", "avg_views", "earliest_post", "latest_post"
+)
+
+
 class Database:
     def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
-        self.conn.row_factory = sqlite3.Row
+        self._accounts_by_id: Dict[str, Account] = {}
+        self._accounts_by_plat_user: Dict[Tuple[str, str], Account] = {}
+        self._all_accounts: Optional[List[Account]] = None
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -63,7 +79,6 @@ class Database:
 
     def close(self) -> None:
         self.conn.close()
-
     # Accounts
     def upsert_account(self, account: Account) -> Account:
         with self.conn:
@@ -78,15 +93,21 @@ class Database:
                 (account.id, account.platform, account.username, int(account.is_own_brand), account.created_at),
             )
             row = cursor.fetchone()
-            return Account(
-                id=row["id"],
-                platform=row["platform"],
-                username=row["username"],
-                is_own_brand=bool(row["is_own_brand"]),
-                created_at=row["created_at"],
+            saved = Account(
+                id=row[0],
+                platform=row[1],
+                username=row[2],
+                is_own_brand=bool(row[3]),
+                created_at=row[4],
             )
+            self._accounts_by_id[saved.id] = saved
+            self._accounts_by_plat_user[(saved.platform, saved.username)] = saved
+            self._all_accounts = None
+            return saved
 
     def get_account(self, account_id: str) -> Optional[Account]:
+        if account_id in self._accounts_by_id:
+            return self._accounts_by_id[account_id]
         cursor = self.conn.execute(
             "SELECT id, platform, username, is_own_brand, created_at FROM accounts WHERE id = ?",
             (account_id,),
@@ -94,46 +115,62 @@ class Database:
         row = cursor.fetchone()
         if not row:
             return None
-        return Account(
-            id=row["id"],
-            platform=row["platform"],
-            username=row["username"],
-            is_own_brand=bool(row["is_own_brand"]),
-            created_at=row["created_at"],
+        acc = Account(
+            id=row[0],
+            platform=row[1],
+            username=row[2],
+            is_own_brand=bool(row[3]),
+            created_at=row[4],
         )
+        self._accounts_by_id[acc.id] = acc
+        self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
+        return acc
 
     def get_account_by_username(self, platform: str, username: str) -> Optional[Account]:
+        norm_plat = platform.lower()
         norm_user = username.lower().strip().lstrip("@")
+        cache_key = (norm_plat, norm_user)
+        if cache_key in self._accounts_by_plat_user:
+            return self._accounts_by_plat_user[cache_key]
         cursor = self.conn.execute(
             "SELECT id, platform, username, is_own_brand, created_at FROM accounts WHERE platform = ? AND username = ?",
-            (platform.lower(), norm_user),
+            (norm_plat, norm_user),
         )
         row = cursor.fetchone()
         if not row:
             return None
-        return Account(
-            id=row["id"],
-            platform=row["platform"],
-            username=row["username"],
-            is_own_brand=bool(row["is_own_brand"]),
-            created_at=row["created_at"],
+        acc = Account(
+            id=row[0],
+            platform=row[1],
+            username=row[2],
+            is_own_brand=bool(row[3]),
+            created_at=row[4],
         )
+        self._accounts_by_id[acc.id] = acc
+        self._accounts_by_plat_user[cache_key] = acc
+        return acc
 
     def list_accounts(self) -> List[Account]:
+        if self._all_accounts is not None:
+            return self._all_accounts
         cursor = self.conn.execute(
             "SELECT id, platform, username, is_own_brand, created_at FROM accounts ORDER BY username ASC"
         )
-        return [
+        accounts = [
             Account(
-                id=row["id"],
-                platform=row["platform"],
-                username=row["username"],
-                is_own_brand=bool(row["is_own_brand"]),
-                created_at=row["created_at"],
+                id=row[0],
+                platform=row[1],
+                username=row[2],
+                is_own_brand=bool(row[3]),
+                created_at=row[4],
             )
             for row in cursor.fetchall()
         ]
-
+        self._all_accounts = accounts
+        for acc in accounts:
+            self._accounts_by_id[acc.id] = acc
+            self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
+        return accounts
     # Posts
     def upsert_posts(self, posts: List[Post]) -> int:
         if not posts:
@@ -228,30 +265,31 @@ class Database:
         params.extend([limit, offset])
 
         cursor = self.conn.execute(sql, params)
-        return [dict(row) for row in cursor.fetchall()]
+        rows = cursor.fetchall()
+        return [dict(zip(POST_COLS, r)) for r in rows]
 
     def get_account_summary(self, account_id: str) -> Optional[Dict[str, Any]]:
         cursor = self.conn.execute(
             """
             SELECT
-                COUNT(*) as total_posts,
-                COALESCE(SUM(likes), 0) as total_likes,
-                COALESCE(AVG(likes), 0.0) as avg_likes,
-                COALESCE(SUM(comments), 0) as total_comments,
-                COALESCE(AVG(comments), 0.0) as avg_comments,
-                COALESCE(SUM(views), 0) as total_views,
-                COALESCE(AVG(views), 0.0) as avg_views,
-                MIN(posted_at) as earliest_post,
-                MAX(posted_at) as latest_post
+                COUNT(*),
+                COALESCE(SUM(likes), 0),
+                COALESCE(AVG(likes), 0.0),
+                COALESCE(SUM(comments), 0),
+                COALESCE(AVG(comments), 0.0),
+                COALESCE(SUM(views), 0),
+                COALESCE(AVG(views), 0.0),
+                MIN(posted_at),
+                MAX(posted_at)
             FROM posts
             WHERE account_id = ?
             """,
             (account_id,),
         )
         row = cursor.fetchone()
-        if not row or row["total_posts"] == 0:
+        if not row or row[0] == 0:
             return None
-        return dict(row)
+        return dict(zip(SUMMARY_COLS, row))
 
     # Scrape Logs
     def insert_scrape_log(self, log: ScrapeLog) -> str:
