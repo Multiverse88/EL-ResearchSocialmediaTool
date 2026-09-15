@@ -8,9 +8,10 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
 
 ## 🚀 Fitur Utama
 
-- **Scraping Terjadwal Multi-Platform**:
-  - **Instagram**: Profil publik via Instaloader (caption, likes, comments, video view count, media URL).
-  - **TikTok**: Profil publik via web metadata & hydration data (caption, likes, comments, views).
+- **Scraping Terjadwal Multi-Platform** (3 tingkat, otomatis pilih yang tersedia):
+  1. **Apify** (jika `APIFY_API_TOKEN` diisi) — paling reliable, pakai proxy residential milik Apify. Gratis ±1.850 post/bulan dari kredit $5 bawaan akun Apify (tanpa kartu kredit).
+  2. **Gratis self-hosted**: Instagram via Instaloader (perlu login akun burner untuk hindari rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright) — tanpa biaya, tanpa batas volume, tapi lebih rentan diblokir/berubah struktur halaman.
+  3. **Fallback terakhir**: TikTok raw HTML parsing kalau Playwright/Chromium tidak tersedia.
   - **Scheduler**: Runner siap dipanggil oleh Dokploy Scheduled Jobs (`0 2 * * *`).
 - **AI Chat Panel Berbasis Web ([Open WebUI](https://openwebui.com/))**:
   - 100% web-based, diakses langsung via browser tanpa install aplikasi desktop.
@@ -30,7 +31,7 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
 ## 🏗️ Arsitektur
 
 ```
-[Instaloader / TikTok Scraper] --(Dokploy Scheduled Jobs)--> [Database (SQLite / Postgres)]
+[Apify / TikTokApi(Playwright) / Instaloader] --(Dokploy Scheduled Jobs)--> [Database (SQLite / Postgres)]
                                                                       │
                                                                       ▼
                                                       [Backend API - FastAPI]

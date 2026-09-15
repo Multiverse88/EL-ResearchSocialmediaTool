@@ -6,6 +6,9 @@ services:
       dockerfile: Dockerfile
     container_name: easycorp_social_api
     restart: unless-stopped
+    # Headless Chromium (TikTokApi/Playwright free scraping path) needs more than Docker's
+    # default 64MB /dev/shm or it crashes intermittently under load.
+    shm_size: '1gb'
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
@@ -16,7 +19,9 @@ services:
       - DATABASE_PATH=/app/data/social_media.db
       - INSTAGRAM_USERNAME=${INSTAGRAM_USERNAME:-}
       - INSTAGRAM_PASSWORD=${INSTAGRAM_PASSWORD:-}
+      - INSTAGRAM_SESSION_FILE=${INSTAGRAM_SESSION_FILE:-}
       - TIKTOK_MS_TOKEN=${TIKTOK_MS_TOKEN:-}
+      - TIKTOK_SESSION_COOKIE=${TIKTOK_SESSION_COOKIE:-}
       - APIFY_API_TOKEN=${APIFY_API_TOKEN:-}
       - API_SECRET_KEY=${API_SECRET_KEY:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}

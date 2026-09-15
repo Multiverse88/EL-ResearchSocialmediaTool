@@ -16,6 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright's headless Chromium for the free TikTokApi scraping fallback
+# (--with-deps pulls the required system libraries via apt)
+RUN playwright install --with-deps chromium
+
 # Copy application source code and web assets
 COPY src/ /app/src/
 COPY static/ /app/static/

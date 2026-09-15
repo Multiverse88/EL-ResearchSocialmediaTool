@@ -12,6 +12,11 @@ from ..models import Account, Post, ScrapeLog
 from ..db import Database
 from ..ingest import ingest_scraped_batch
 from .apify_client import TIKTOK_ACTOR_ID, is_apify_configured, run_actor_sync
+from .tiktokapi_client import (
+    _tiktokapi_item_to_raw_post,
+    fetch_user_videos,
+    is_tiktokapi_available,
+)
 
 logger = logging.getLogger("scrapers.tiktok")
 
@@ -115,6 +120,45 @@ def _scrape_tiktok_profile_apify(
 
     except Exception as exc:
         err_msg = f"Apify TikTok scrape failed for @{username}: {str(exc)}"
+        logger.error(err_msg)
+        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+        return 0, err_msg
+
+
+def _scrape_tiktok_profile_playwright(
+    db: Database,
+    account: Account,
+    max_posts: int,
+) -> Tuple[int, Optional[str]]:
+    """Scrapes a TikTok profile via TikTokApi (free, self-hosted Playwright/Chromium)."""
+    username = account.username.strip().lstrip("@")
+    logger.info(f"Starting TikTok scrape (TikTokApi/Playwright) for @{username} (limit={max_posts})")
+
+    try:
+        items = fetch_user_videos(username, max_posts)
+        raw_posts = [p for p in (_tiktokapi_item_to_raw_post(item) for item in items) if p is not None]
+
+        if not raw_posts:
+            err_msg = f"TikTokApi returned no usable videos for @{username} (profile may be private, empty, or not found)"
+            logger.warning(err_msg)
+            db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+            return 0, err_msg
+
+        inserted_count, err = ingest_scraped_batch(
+            db=db,
+            platform="tiktok",
+            account=account,
+            raw_posts=raw_posts,
+        )
+        if err:
+            logger.error(f"Ingestion error for TikTok @{username}: {err}")
+            return 0, err
+
+        logger.info(f"Successfully scraped (TikTokApi) and stored {inserted_count} TikTok videos for @{username}")
+        return inserted_count, None
+
+    except Exception as exc:
+        err_msg = f"TikTokApi scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
         db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
         return 0, err_msg
@@ -233,10 +277,15 @@ def scrape_tiktok_profile(
 ) -> Tuple[int, Optional[str]]:
     """
     Scrapes public videos from a TikTok profile and saves them to the database.
-    Uses Apify (clockworks/tiktok-scraper) when APIFY_API_TOKEN is configured — reliable,
-    handles TikTok's anti-bot measures on Apify's own infrastructure.
-    Falls back to free raw HTML parsing otherwise (fragile, breaks when TikTok changes markup).
+    Dispatch order:
+      1. Apify (clockworks/tiktok-scraper) when APIFY_API_TOKEN is configured — most reliable,
+         handles TikTok's anti-bot measures on Apify's own infrastructure.
+      2. TikTokApi/Playwright (free, self-hosted headless Chromium) when installed.
+      3. Raw HTML parsing (free, no extra dependency, but fragile — breaks when TikTok
+         changes page markup).
     """
     if is_apify_configured():
         return _scrape_tiktok_profile_apify(db, account, max_posts)
+    if is_tiktokapi_available():
+        return _scrape_tiktok_profile_playwright(db, account, max_posts)
     return _scrape_tiktok_profile_html(db, account, max_posts, delay_between_requests)
