@@ -48,6 +48,7 @@ def normalize_instagram_post(raw: Dict[str, Any], account_id: str) -> Post:
         views=views_int,
         posted_at=posted_at,
         scraped_at=scraped_at,
+        platform="instagram",
     )
 
 
@@ -81,6 +82,7 @@ def normalize_tiktok_post(raw: Dict[str, Any], account_id: str) -> Post:
         views=views_int,
         posted_at=posted_at,
         scraped_at=scraped_at,
+        platform="tiktok",
     )
 
 

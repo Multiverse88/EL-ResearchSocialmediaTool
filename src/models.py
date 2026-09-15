@@ -47,7 +47,7 @@ class Post:
     views: Optional[int]
     posted_at: str
     scraped_at: str
-
+    platform: str = ""
     @classmethod
     def create(
         cls,
@@ -61,6 +61,7 @@ class Post:
         posted_at: Optional[str] = None,
         scraped_at: Optional[str] = None,
         post_id: Optional[str] = None,
+        platform: str = "",
     ) -> Post:
         return cls(
             id=post_id or str(uuid.uuid4()),
@@ -73,6 +74,7 @@ class Post:
             views=int(views) if views is not None else None,
             posted_at=posted_at or datetime.now(timezone.utc).isoformat(),
             scraped_at=scraped_at or datetime.now(timezone.utc).isoformat(),
+            platform=platform.lower() if platform else "",
         )
 
     def to_dict(self) -> dict:

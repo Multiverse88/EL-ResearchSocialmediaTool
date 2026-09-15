@@ -25,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_platform_username ON accounts(platform, 
 CREATE TABLE IF NOT EXISTS posts (
     id TEXT PRIMARY KEY,
     account_id TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT '',
     platform_post_id TEXT NOT NULL,
     caption TEXT NOT NULL,
     media_url TEXT NOT NULL,
@@ -37,6 +38,8 @@ CREATE TABLE IF NOT EXISTS posts (
     UNIQUE(account_id, platform_post_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_posts_account_posted_at ON posts(account_id, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_platform_posted ON posts(platform, posted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at DESC);
 
 CREATE TABLE IF NOT EXISTS scrape_logs (
@@ -70,6 +73,7 @@ class Database:
         self._accounts_by_id: Dict[str, Account] = {}
         self._accounts_by_plat_user: Dict[Tuple[str, str], Account] = {}
         self._all_accounts: Optional[List[Account]] = None
+        self._account_summaries: Dict[str, Optional[Dict[str, Any]]] = {}
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -174,10 +178,15 @@ class Database:
     def upsert_posts(self, posts: List[Post]) -> int:
         if not posts:
             return 0
-        records = [
-            (
+        records = []
+        for p in posts:
+            plat = p.platform
+            if not plat and p.account_id in self._accounts_by_id:
+                plat = self._accounts_by_id[p.account_id].platform
+            records.append((
                 p.id,
                 p.account_id,
+                plat,
                 p.platform_post_id,
                 p.caption,
                 p.media_url,
@@ -186,17 +195,16 @@ class Database:
                 p.views,
                 p.posted_at,
                 p.scraped_at,
-            )
-            for p in posts
-        ]
+            ))
         with self.conn:
             cursor = self.conn.executemany(
                 """
                 INSERT INTO posts (
-                    id, account_id, platform_post_id, caption, media_url,
+                    id, account_id, platform, platform_post_id, caption, media_url,
                     likes, comments, views, posted_at, scraped_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_id, platform_post_id) DO UPDATE SET
+                    platform = excluded.platform,
                     caption = excluded.caption,
                     media_url = excluded.media_url,
                     likes = excluded.likes,
@@ -206,6 +214,7 @@ class Database:
                 """,
                 records,
             )
+            self._account_summaries.clear()
             return cursor.rowcount
 
     def query_posts(
@@ -240,15 +249,8 @@ class Database:
             clauses.append("account_id = ?")
             params.append(acc.id)
         elif platform:
-            norm_plat = platform.lower()
-            all_accs = self.list_accounts()
-            plat_acc_ids = [a.id for a in all_accs if a.platform == norm_plat]
-            if not plat_acc_ids:
-                return []
-            placeholders = ",".join("?" * len(plat_acc_ids))
-            clauses.append(f"account_id IN ({placeholders})")
-            params.extend(plat_acc_ids)
-
+            clauses.append("platform = ?")
+            params.append(platform.lower())
         if keyword:
             clauses.append("caption LIKE ?")
             params.append(f"%{keyword}%")
@@ -265,7 +267,7 @@ class Database:
 
         sql = f"""
             SELECT
-                id, account_id, platform_post_id, caption, media_url,
+                id, account_id, platform, platform_post_id, caption, media_url,
                 likes, comments, views, posted_at, scraped_at
             FROM posts
             {where_clause}
@@ -283,19 +285,21 @@ class Database:
             res.append({
                 "id": r[0],
                 "account_id": r[1],
-                "platform": acc.platform if acc else "",
+                "platform": r[2] or (acc.platform if acc else ""),
                 "username": acc.username if acc else "",
-                "platform_post_id": r[2],
-                "caption": r[3],
-                "media_url": r[4],
-                "likes": r[5],
-                "comments": r[6],
-                "views": r[7],
-                "posted_at": r[8],
-                "scraped_at": r[9],
+                "platform_post_id": r[3],
+                "caption": r[4],
+                "media_url": r[5],
+                "likes": r[6],
+                "comments": r[7],
+                "views": r[8],
+                "posted_at": r[9],
+                "scraped_at": r[10],
             })
         return res
     def get_account_summary(self, account_id: str) -> Optional[Dict[str, Any]]:
+        if account_id in self._account_summaries:
+            return self._account_summaries[account_id]
         cursor = self.conn.execute(
             """
             SELECT
@@ -315,8 +319,11 @@ class Database:
         )
         row = cursor.fetchone()
         if not row or row[0] == 0:
+            self._account_summaries[account_id] = None
             return None
-        return dict(zip(SUMMARY_COLS, row))
+        res = dict(zip(SUMMARY_COLS, row))
+        self._account_summaries[account_id] = res
+        return res
 
     # Scrape Logs
     def insert_scrape_log(self, log: ScrapeLog) -> str:
