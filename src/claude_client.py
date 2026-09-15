@@ -156,13 +156,13 @@ class ClaudeChatHandler:
         fallback = self._local_fallback_handler(db, message)
         yield {"type": "content", "text": fallback.get("reply", "")}
 
-    def _build_router_context(
+    def _resolve_matched_topic(
         self,
         db: Database,
         user_message: str,
         history: List[Dict[str, Any]],
-    ):
-        """Resolves topic, pulls factual DB context, and builds the router request payload."""
+    ) -> str:
+        """Matches the user's message (or recent history, for follow-ups) to a known/likely topic keyword."""
         msg_lower = user_message.lower()
         matched_topic = None
         for t in self._resolve_topics(db):
@@ -183,6 +183,69 @@ class ClaudeChatHandler:
         if not matched_topic:
             words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
             matched_topic = words[0] if words else "pendirian PT"
+        return matched_topic
+
+    def _ensure_topic_freshness(self, db: Database, matched_topic: str) -> Optional[str]:
+        """
+        Live-scrapes the topic before answering if we have no data yet, or the newest data is
+        older than TOPIC_STALENESS_HOURS (default 6h). Runs synchronously (blocks the chat
+        response) — this trades response latency for data freshness, and consumes scraper
+        quota (Apify credit, or risks free-tier IP/account rate limiting) on every genuinely
+        new or stale topic a user asks about. Disable via ENABLE_LIVE_SCRAPE_ON_CHAT=false.
+        Returns a short human-readable status string if a scrape ran, else None.
+        """
+        if os.getenv("ENABLE_LIVE_SCRAPE_ON_CHAT", "true").lower() in ("false", "0", "no"):
+            return None
+
+        try:
+            staleness_hours = float(os.getenv("TOPIC_STALENESS_HOURS", "6"))
+        except ValueError:
+            staleness_hours = 6.0
+
+        needs_scrape = True
+        last_scraped = db.get_topic_last_scraped(matched_topic)
+        if last_scraped:
+            try:
+                from datetime import datetime, timezone
+                last_dt = datetime.fromisoformat(last_scraped)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                age_hours = (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600
+                needs_scrape = age_hours >= staleness_hours
+            except Exception:
+                needs_scrape = True
+
+        if not needs_scrape:
+            return None
+
+        try:
+            from .scrapers.keyword_scraper import scrape_topic_content
+            max_posts = int(os.getenv("MAX_POSTS_PER_SCRAPE", "30"))
+            logger.info(f"Live scrape-on-chat: fetching fresh data for topic '{matched_topic}'")
+            result = scrape_topic_content(db, matched_topic, max_posts_per_platform=max_posts)
+            added = result.get("total_posts_added", 0)
+            return (
+                f"🔍 Mengambil data terbaru untuk topik \"{matched_topic}\" dari Instagram & TikTok "
+                f"({added} postingan baru ditemukan)...\n\n"
+            )
+        except Exception as exc:
+            logger.warning(f"Live scrape-on-chat failed for topic '{matched_topic}': {exc}")
+            return None
+
+    def _build_router_context(
+        self,
+        db: Database,
+        user_message: str,
+        history: List[Dict[str, Any]],
+        matched_topic: Optional[str] = None,
+    ):
+        """
+        Resolves topic (unless already provided by the caller), live-scrapes it if stale,
+        pulls factual DB context, and builds the router request payload.
+        """
+        if matched_topic is None:
+            matched_topic = self._resolve_matched_topic(db, user_message, history)
+            self._ensure_topic_freshness(db, matched_topic)
 
         # Pull real data from database for this topic to inject as factual context
         topic_data = db.get_topic_summary(matched_topic)
@@ -294,8 +357,13 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
         (Open WebUI) can render the typing/thinking animation in real time.
         Yields dicts: {"type": "reasoning"|"content", "text": str} or {"type": "error", "text": str}.
         """
+        matched_topic = self._resolve_matched_topic(db, user_message, history)
+        freshness_status = self._ensure_topic_freshness(db, matched_topic)
+        if freshness_status:
+            yield {"type": "reasoning", "text": freshness_status}
+
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
-            db, user_message, history
+            db, user_message, history, matched_topic=matched_topic
         )
         payload = {
             "model": target_model,

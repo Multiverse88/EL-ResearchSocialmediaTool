@@ -403,6 +403,16 @@ class Database:
         cursor = self.conn.execute("SELECT id, keyword, category, created_at FROM topics ORDER BY keyword ASC")
         return [Topic(id=r[0], keyword=r[1], category=r[2], created_at=r[3]) for r in cursor.fetchall()]
 
+    def get_topic_last_scraped(self, keyword: str) -> Optional[str]:
+        """Returns the most recent `scraped_at` timestamp among posts tagged with this topic, or None."""
+        clean_kw = keyword.strip().lower()
+        cursor = self.conn.execute(
+            "SELECT MAX(scraped_at) FROM posts WHERE topic = ? OR caption LIKE ?",
+            (clean_kw, f"%{clean_kw}%"),
+        )
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else None
+
     def get_topic_summary(self, keyword: str, platform: Optional[str] = None) -> Dict[str, Any]:
         clean_kw = keyword.strip().lower()
         clauses = ["(topic = ? OR caption LIKE ?)"]
