@@ -520,4 +520,5 @@ class Database:
             "SELECT id, platform, status, error_message, run_at FROM scrape_logs ORDER BY run_at DESC LIMIT ?",
             (limit,),
         )
-        return [dict(row) for row in cursor.fetchall()]
+        cols = ("id", "platform", "status", "error_message", "run_at")
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]

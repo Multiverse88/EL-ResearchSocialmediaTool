@@ -7,7 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +40,53 @@ def get_claude_handler() -> ClaudeChatHandler:
     return _claude_handler
 
 
+# --- Write-endpoint API key auth ---
+# Set API_SECRET_KEY in the environment to require `X-API-Key` (or `Authorization: Bearer`)
+# on state-changing endpoints. Left unset, auth is skipped (zero-config internal tool default)
+# but a warning is logged once so the gap is visible in logs.
+API_SECRET_KEY = os.getenv("API_SECRET_KEY", "").strip()
+if not API_SECRET_KEY:
+    logger.warning(
+        "API_SECRET_KEY is not set. Write endpoints (POST /accounts, /topics, /scrape/run, "
+        "/api/seed-sample-data) are UNAUTHENTICATED. Set API_SECRET_KEY in Dokploy Environment "
+        "to require an X-API-Key header on those routes."
+    )
+
+
+def require_api_key(
+    x_api_key: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+) -> None:
+    secret = os.getenv("API_SECRET_KEY", "").strip()
+    if not secret:
+        return
+    provided = x_api_key
+    if not provided and authorization and authorization.lower().startswith("bearer "):
+        provided = authorization[7:].strip()
+    if provided != secret:
+        raise HTTPException(status_code=401, detail="Missing or invalid API key. Provide X-API-Key header.")
+
+
+# --- Simple in-memory rate limiter for chat endpoints ---
+# Bounds request volume per client IP so a runaway script/loop can't burn 9router budget.
+_chat_request_log: Dict[str, List[float]] = {}
+
+
+def enforce_chat_rate_limit(request: Request) -> None:
+    limit = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20"))
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window_start = now - 60.0
+    history = _chat_request_log.setdefault(client_ip, [])
+    history[:] = [t for t in history if t > window_start]
+    if len(history) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded ({limit} pesan/menit). Coba lagi sebentar.",
+        )
+    history.append(now)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_db()
@@ -58,9 +105,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_default_allowed_origins = [
+    "https://easylegal-socialmediaresearchtool-kftevw-d3117c-157-10-252-77.sslip.io",
+    "http://100.81.215.57:8000",
+    "http://100.81.215.57:3080",
+    "http://localhost:8000",
+    "http://localhost:3080",
+]
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = (
+    [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+    if _allowed_origins_env
+    else _default_allowed_origins
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -118,7 +179,7 @@ def list_accounts():
     }
 
 
-@app.post("/accounts")
+@app.post("/accounts", dependencies=[Depends(require_api_key)])
 def create_account(payload: CreateAccountRequest):
     """POST /accounts - Tambah akun baru untuk discrape."""
     platform = payload.platform.strip().lower()
@@ -228,7 +289,7 @@ def list_topics():
     }
 
 
-@app.post("/topics")
+@app.post("/topics", dependencies=[Depends(require_api_key)])
 def create_topic(payload: CreateTopicRequest):
     """POST /topics - Daftarkan kata kunci / topik baru untuk riset."""
     from .models import Topic
@@ -267,7 +328,7 @@ def compare_topics_endpoint(
     }
 
 
-@app.post("/topics/scrape")
+@app.post("/topics/scrape", dependencies=[Depends(require_api_key)])
 def scrape_topic_endpoint(payload: ScrapeTopicRequest, background_tasks: BackgroundTasks):
     """POST /topics/scrape - Trigger scraping konten media sosial berdasarkan topik/hashtag."""
     from .scrapers.keyword_scraper import scrape_topic_content
@@ -284,7 +345,7 @@ def scrape_topic_endpoint(payload: ScrapeTopicRequest, background_tasks: Backgro
 
 
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(enforce_chat_rate_limit)])
 def chat_endpoint(payload: ChatRequest):
     """
     POST /chat - Endpoint utama chat panel.
@@ -339,7 +400,7 @@ def list_openai_models():
     }
 
 
-@app.post("/v1/chat/completions")
+@app.post("/v1/chat/completions", dependencies=[Depends(enforce_chat_rate_limit)])
 def openai_compatible_chat(payload: ChatRequest):
     """
     OpenAI-compatible endpoint for Open WebUI, LibreChat, and standard AI webchat clients.
@@ -419,7 +480,7 @@ def openai_compatible_chat(payload: ChatRequest):
 
     return StreamingResponse(_sse_generator(), media_type="text/event-stream")
 
-@app.post("/api/seed-sample-data")
+@app.post("/api/seed-sample-data", dependencies=[Depends(require_api_key)])
 def seed_sample_data(posts_per_account: int = Query(25, ge=5, le=100)):
     """
     Populates realistic marketing sample posts for EasyLegal, EasyTax, EasyOffice,
@@ -438,7 +499,7 @@ def seed_sample_data(posts_per_account: int = Query(25, ge=5, le=100)):
     }
 
 
-@app.post("/scrape/run")
+@app.post("/scrape/run", dependencies=[Depends(require_api_key)])
 def trigger_scrape(payload: ScrapeRunRequest, background_tasks: BackgroundTasks):
     """
     Triggers scraping on demand in background task.

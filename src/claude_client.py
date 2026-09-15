@@ -24,7 +24,7 @@ Panduan:
 4. Jawab dalam Bahasa Indonesia yang profesional, ramah, dan solutif untuk tim marketing.
 """
 
-KNOWN_TOPICS = [
+SEED_TOPICS = [
     "pendirian pt", "izin usaha oss", "konsultasi pajak", "merek dagang hki",
     "kontrak kerja", "perjanjian bisnis", "perizinan", "laporan spt tahunan",
     "sewa virtual office", "npwp badan usaha", "perubahan akta", "legalitas umkm",
@@ -53,6 +53,19 @@ class ClaudeChatHandler:
             self.client = anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
         else:
             self.client = None
+
+    def _resolve_topics(self, db: Database) -> List[str]:
+        """
+        Returns known topic keywords for matching, combining live topics discovered
+        via scraping/seeding (tabel `topics`) with a static seed list for cold-start.
+        Longer phrases first so specific matches win over generic substrings.
+        """
+        try:
+            db_topics = [t.keyword for t in db.list_topics()]
+        except Exception:
+            db_topics = []
+        merged = sorted(set(db_topics) | set(SEED_TOPICS), key=len, reverse=True)
+        return merged
 
     def process_chat(
         self,
@@ -152,7 +165,7 @@ class ClaudeChatHandler:
         """Resolves topic, pulls factual DB context, and builds the router request payload."""
         msg_lower = user_message.lower()
         matched_topic = None
-        for t in KNOWN_TOPICS:
+        for t in self._resolve_topics(db):
             if t in msg_lower:
                 matched_topic = t
                 break
@@ -160,7 +173,7 @@ class ClaudeChatHandler:
         if not matched_topic and history:
             for past_msg in reversed(history):
                 past_content = str(past_msg.get("content", "")).lower()
-                for t in KNOWN_TOPICS:
+                for t in self._resolve_topics(db):
                     if t in past_content:
                         matched_topic = t
                         break
@@ -419,7 +432,7 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
 
         # 1. Compare Topics Intent
         if any(w in msg_lower for w in ["bandingkan topik", "bandingkan kata kunci", "compare topik", "vs", "versus"]):
-            found_topics = [t for t in KNOWN_TOPICS if t in msg_lower]
+            found_topics = [t for t in self._resolve_topics(db) if t in msg_lower]
             if len(found_topics) < 2:
                 found_topics = ["pendirian pt", "virtual office", "konsultasi pajak"]
             tool_res = execute_claude_tool(db, "compare_topics", {"keywords": found_topics})
@@ -444,7 +457,7 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
         # 2. Viral Content / Idea Inspiration Intent
         if any(w in msg_lower for w in ["viral", "tertinggi", "terbanyak", "contoh", "ide konten", "hook"]):
             kw = None
-            for t in KNOWN_TOPICS:
+            for t in self._resolve_topics(db):
                 if t in msg_lower:
                     kw = t
                     break
@@ -479,7 +492,7 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
             }
 
         # 3. Research Specific Topic Intent (Check known topics first)
-        for t in KNOWN_TOPICS:
+        for t in self._resolve_topics(db):
             if t in msg_lower:
                 tool_res = execute_claude_tool(db, "research_topic", {"keyword": t})
                 total_p = tool_res.get("total_posts", 0)
