@@ -24,10 +24,15 @@ Panduan:
 
 
 class ClaudeChatHandler:
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model = model or os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
-        self.client = anthropic.Anthropic(api_key=self.api_key) if self.api_key else None
+        self.base_url = base_url or os.getenv("ANTHROPIC_BASE_URL")
+        self.client = (
+            anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
+            if self.api_key
+            else None
+        )
 
     def process_chat(
         self,
