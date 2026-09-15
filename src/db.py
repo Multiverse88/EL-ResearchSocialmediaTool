@@ -74,6 +74,7 @@ class Database:
         self._accounts_by_plat_user: Dict[Tuple[str, str], Account] = {}
         self._all_accounts: Optional[List[Account]] = None
         self._account_summaries: Dict[str, Optional[Dict[str, Any]]] = {}
+        self._top_posts: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -215,6 +216,7 @@ class Database:
                 records,
             )
             self._account_summaries.clear()
+            self._top_posts.clear()
             return cursor.rowcount
 
     def query_posts(
@@ -324,6 +326,14 @@ class Database:
         res = dict(zip(SUMMARY_COLS, row))
         self._account_summaries[account_id] = res
         return res
+
+    def get_top_posts(self, account_id: str, limit: int = 3) -> List[Dict[str, Any]]:
+        cache_key = (account_id, limit)
+        if cache_key in self._top_posts:
+            return self._top_posts[cache_key]
+        posts = self.query_posts(account_id=account_id, limit=limit)
+        self._top_posts[cache_key] = posts
+        return posts
 
     # Scrape Logs
     def insert_scrape_log(self, log: ScrapeLog) -> str:

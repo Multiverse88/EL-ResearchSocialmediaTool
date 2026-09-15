@@ -165,7 +165,7 @@ def get_engagement_summary(
         engagement_rate = 0.0
 
     # Top posts by likes
-    top_posts = db.query_posts(account_id=account.id, limit=3)
+    top_posts = db.get_top_posts(account_id=account.id, limit=3)
 
     return {
         "status": "success",
