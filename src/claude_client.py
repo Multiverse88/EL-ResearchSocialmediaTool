@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 import anthropic
+import httpx
 from .db import Database
 from .tools import CLAUDE_TOOLS_SPEC, execute_claude_tool
 
@@ -17,13 +18,9 @@ Anda adalah AI Social Media Content & Topic Researcher untuk EasyCorp (EasyLegal
 Fokus utama Anda adalah melakukan riset topik dan kata kunci konten media sosial (Instagram & TikTok), menganalisis tren performa, menemukan konten viral, dan merekomendasikan ide konten berkinerja tinggi bagi tim marketing.
 
 Panduan:
-1. SELALU panggil tools yang tersedia untuk mengambil data nyata sebelum menjawab:
-   - `research_topic`: Gunakan untuk melihat statistik total konten, likes rata-rata, views, dan engagement rate dari suatu kata kunci/topik.
-   - `find_viral_content`: Gunakan untuk melihat contoh konten viral dengan interaksi tertinggi sebagai bahan inspirasi hook & caption.
-   - `compare_topics`: Gunakan untuk membandingkan potensi minat audiens antar beberapa kata kunci (misal 'pendirian PT' vs 'virtual office').
-   - `search_scraped_posts`: Gunakan untuk memfilter postingan spesifik.
-2. Jelaskan metrik utama secara objektif dan berbasis angka riil.
-3. Berikan rekomendasi taktis (misal: "Topik ini memiliki likes rata-rata X, format video di TikTok memiliki views 4x lebih tinggi, disarankan membuat konten dengan angle tips praktis").
+1. Berikan analisis berbasis data yang objektif dan terstruktur.
+2. Jelaskan metrik utama seperti total posts, rata-rata likes, views, dan engagement rate.
+3. Berikan rekomendasi taktis (misal: hook pembuka konten, format video Reels/TikTok vs carousel).
 4. Jawab dalam Bahasa Indonesia yang profesional, ramah, dan solutif untuk tim marketing.
 """
 
@@ -32,20 +29,30 @@ KNOWN_TOPICS = [
     "kontrak kerja", "perjanjian bisnis", "perizinan", "laporan spt tahunan",
     "sewa virtual office", "npwp badan usaha", "perubahan akta", "legalitas umkm",
     "biaya pembuatan pt", "syarat izin edar bpom", "rekening bank perusahaan",
-    "pt pma", "virtual office", "pajak", "hki", "merek", "oss",
+    "pt pma", "virtual office", "pajak", "hki", "merek", "oss", "legalitas",
 ]
+
+STOP_WORDS = {
+    "saya", "kami", "kita", "kamu", "anda", "dia", "mereka",
+    "butuh", "ingin", "mau", "minta", "tolong", "bisa", "buatkan",
+    "riset", "cari", "topik", "konten", "apa", "yang", "tentang",
+    "bagaimana", "gimana", "dong", "media", "sosial", "di", "dan",
+    "atau", "dari", "ke", "untuk", "ini", "itu", "ada", "apakah",
+    "halo", "hai", "tes", "test", "ya", "kan", "nih"
+}
 
 
 class ClaudeChatHandler:
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        self.model = model or os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
-        self.base_url = base_url or os.getenv("ANTHROPIC_BASE_URL")
-        self.client = (
-            anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
-            if self.api_key
-            else None
-        )
+        self.model = model or os.getenv("CLAUDE_MODEL", "Thinking")
+        self.base_url = base_url or os.getenv("ANTHROPIC_BASE_URL") or os.getenv("OPENAI_API_BASE_URL")
+
+        # Initialize Anthropic SDK only if it's a native Anthropic key
+        if self.api_key and self.api_key.startswith("sk-ant-"):
+            self.client = anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
+        else:
+            self.client = None
 
     def process_chat(
         self,
@@ -55,23 +62,131 @@ class ClaudeChatHandler:
     ) -> Dict[str, Any]:
         """
         Processes a marketing topic research query.
-        Uses Claude API with tool use if ANTHROPIC_API_KEY is available,
+        Uses 9router / OpenAI-compatible gateway or Claude API if key is set,
         otherwise uses local intent matching fallback.
         """
         if not message or not message.strip():
             return {"status": "error", "message": "Pesan chat tidak boleh kosong"}
 
-        if not self.client:
-            logger.info("ANTHROPIC_API_KEY not set. Running local intent fallback handler.")
+        if not self.api_key:
+            logger.info("No AI API key configured. Running local intent fallback handler.")
             return self._local_fallback_handler(db, message)
 
-        try:
-            return self._claude_tool_use_loop(db, message, conversation_history or [])
-        except Exception as exc:
-            logger.error(f"Error calling Claude API: {exc}. Falling back to local handler.")
-            fallback = self._local_fallback_handler(db, message)
-            fallback["warning"] = f"Claude API error ({str(exc)}). Menampilkan hasil dari mesin query internal."
-            return fallback
+        # Route 1: 9router or OpenAI-compatible router
+        is_openai_router = (
+            not self.api_key.startswith("sk-ant-")
+            or (self.base_url and "anthropic.com" not in self.base_url)
+        )
+
+        if is_openai_router:
+            try:
+                return self._call_openai_router(db, message, conversation_history or [])
+            except Exception as exc:
+                logger.error(f"Error calling 9router/OpenAI gateway: {exc}. Falling back to local handler.")
+                fallback = self._local_fallback_handler(db, message)
+                fallback["warning"] = f"AI Router notice: {str(exc)} (Menampilkan hasil dari query database internal)."
+                return fallback
+
+        # Route 2: Native Anthropic Claude API
+        if self.client:
+            try:
+                return self._claude_tool_use_loop(db, message, conversation_history or [])
+            except Exception as exc:
+                logger.error(f"Error calling Claude API: {exc}. Falling back to local handler.")
+                fallback = self._local_fallback_handler(db, message)
+                fallback["warning"] = f"Claude API notice: {str(exc)} (Menampilkan hasil dari query database internal)."
+                return fallback
+
+        return self._local_fallback_handler(db, message)
+
+    def _call_openai_router(
+        self,
+        db: Database,
+        user_message: str,
+        history: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Calls 9router / OpenAI-compatible endpoint with enriched database context."""
+        msg_lower = user_message.lower()
+        matched_topic = None
+        for t in KNOWN_TOPICS:
+            if t in msg_lower:
+                matched_topic = t
+                break
+
+        if not matched_topic:
+            words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
+            matched_topic = words[0] if words else "pendirian PT"
+
+        # Pull real data from database for this topic
+        topic_data = db.get_topic_summary(matched_topic)
+        viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=3)
+
+        context_text = f"""
+[DATA RIIL HASIL SCRAPING MEDIA SOSIAL]:
+Topik / Kata Kunci: '{matched_topic}'
+Total Postingan Termonitor: {topic_data.get('total_posts', 0)} post
+Rata-Rata Likes per Post: {topic_data.get('avg_likes', 0):,} likes
+Puncak Likes Tertinggi: {topic_data.get('max_likes', 0):,} likes
+Rata-Rata Views (Video TikTok/Reels): {topic_data.get('avg_views', 0):,} views
+Engagement Rate Rata-Rata: {topic_data.get('engagement_rate', 0)}%
+
+Referensi Postingan Paling Viral di Database:
+"""
+        for p in viral_posts:
+            v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
+            context_text += f"- [{p['platform'].upper()}] @{p['username']}: \"{p['caption'][:120]}...\" ({p['likes']:,} likes, {v_txt})\n"
+
+        system_instruction = (
+            f"{DEFAULT_SYSTEM_PROMPT}\n\n"
+            f"Berikut data hasil scraping terkini yang relevan dengan pertanyaan user:\n"
+            f"{context_text}\n"
+            f"Gunakan data di atas untuk menjawab pertanyaan tim marketing secara faktual, mendalam, dan sertakan ide/rekomendasi taktis."
+        )
+
+        endpoint_url = self.base_url or os.getenv("OPENAI_API_BASE_URL") or "https://router9-9router-bba7ab-157-10-252-77.sslip.io/v1"
+        if not endpoint_url.endswith("/chat/completions"):
+            endpoint_url = endpoint_url.rstrip("/") + "/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        target_model = self.model
+        if not target_model or target_model.lower() in ("vision", "claude-3-5-sonnet-20241022"):
+            target_model = "Thinking"
+
+        payload = {
+            "model": target_model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_message},
+            ],
+        }
+
+        with httpx.Client(timeout=45.0) as client:
+            resp = client.post(endpoint_url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                resp_json = resp.json()
+                choices = resp_json.get("choices", [])
+                reply_text = ""
+                if choices:
+                    reply_text = choices[0].get("message", {}).get("content", "")
+
+                if not reply_text:
+                    return self._local_fallback_handler(db, user_message)
+
+                return {
+                    "status": "success",
+                    "user_query": user_message,
+                    "model": target_model,
+                    "tool_used": "research_topic",
+                    "tool_results": [{"tool": "research_topic", "topic": matched_topic, "data": topic_data}],
+                    "reply": reply_text,
+                }
+            else:
+                raise RuntimeError(f"9router HTTP {resp.status_code}: {resp.text}")
 
     def _claude_tool_use_loop(
         self,
@@ -86,7 +201,6 @@ class ClaudeChatHandler:
         tools_used = []
         tool_results_data = []
 
-        # Step 1: Initial call to Claude with tool definitions
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1500,
@@ -121,7 +235,6 @@ class ClaudeChatHandler:
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": tool_result_contents})
 
-            # Step 2: Final response from Claude synthesizing tool output
             final_response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
@@ -161,7 +274,7 @@ class ClaudeChatHandler:
             }
 
     def _local_fallback_handler(self, db: Database, message: str) -> Dict[str, Any]:
-        """Local topic and keyword intent handler when Claude API key is not present."""
+        """Local topic and keyword intent handler when AI router is not reachable."""
         msg_lower = message.lower()
         accounts = db.list_accounts()
 
@@ -197,7 +310,9 @@ class ClaudeChatHandler:
                     kw = t
                     break
             if not kw:
-                kw = "pendirian pt"
+                words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
+                kw = words[0] if words else "pendirian pt"
+
             tool_res = execute_claude_tool(db, "find_viral_content", {"keyword": kw, "limit": 3})
             posts = tool_res.get("viral_posts", [])
             if posts:
@@ -224,7 +339,7 @@ class ClaudeChatHandler:
                 "reply": reply,
             }
 
-        # 3. Research Specific Topic Intent
+        # 3. Research Specific Topic Intent (Check known topics first)
         for t in KNOWN_TOPICS:
             if t in msg_lower:
                 tool_res = execute_claude_tool(db, "research_topic", {"keyword": t})
@@ -240,7 +355,7 @@ class ClaudeChatHandler:
                     f"- Puncak likes tertinggi: **{max_l:,} likes**\n"
                     f"- Rata-rata views (TikTok/Reels): **{avg_v:,} views**\n"
                     f"- Engagement rate rata-rata: **{er}%**\n\n"
-                    f"💡 **Insight Riset**: Topik '{t}' memiliki interaksi yang stabil. Di TikTok, format video penjelasan singkat dengan visual akta/dokumen menghasilkan views di atas rata-rata."
+                    f"💡 **Insight Riset**: Topik '{t}' memiliki interaksi yang kuat di media sosial. Di TikTok & Reels, video edukasi 30-60 detik berfokus pada solusi praktis menghasilkan interaksi di atas rata-rata."
                 )
                 return {
                     "status": "success",
@@ -277,17 +392,18 @@ class ClaudeChatHandler:
                 "reply": reply,
             }
 
-        # 5. Default keyword search
-        stop_words = {"riset", "cari", "topik", "konten", "apa", "yang", "tentang", "bagaimana", "media", "sosial"}
-        words = [w for w in msg_lower.split() if len(w) > 2 and w not in stop_words]
+        # 5. Extract topic keywords skipping stop words
+        words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
         kw = words[0] if words else "pendirian PT"
         tool_res = execute_claude_tool(db, "research_topic", {"keyword": kw})
         reply = (
-            f"Hasil riset kata kunci **'{kw}'**:\n"
-            f"- Total postingan: {tool_res.get('total_posts', 0)} post\n"
-            f"- Rata-rata likes: {tool_res.get('avg_likes', 0):,}\n"
-            f"- Rata-rata views: {tool_res.get('avg_views', 0):,}\n"
-            f"- Engagement rate: {tool_res.get('engagement_rate', 0)}%"
+            f"📊 **Hasil Riset Kata Kunci: '{kw}'**:\n"
+            f"- Total postingan: **{tool_res.get('total_posts', 0)} post**\n"
+            f"- Rata-rata likes: **{tool_res.get('avg_likes', 0):,} likes**\n"
+            f"- Puncak likes: **{tool_res.get('max_likes', 0):,} likes**\n"
+            f"- Rata-rata views: **{tool_res.get('avg_views', 0):,} views**\n"
+            f"- Engagement rate: **{tool_res.get('engagement_rate', 0)}%**\n\n"
+            f"💡 **Rekomendasi Konten**: Gunakan kata kunci '{kw}' pada baris pertama caption dan hook video 3 detik awal untuk meningkatkan retensi penonton."
         )
         return {
             "status": "success",
