@@ -298,6 +298,21 @@ document.addEventListener("DOMContentLoaded", () => {
       alert(`Gagal memicu scraping: ${err.message}`);
     }
   });
+  const seedDataBtn = document.getElementById("seed-data-btn");
+  if (seedDataBtn) {
+    seedDataBtn.addEventListener("click", async () => {
+      if (!confirm("Isi database dengan sample data postingan Instagram & TikTok untuk riset?")) return;
+      try {
+        const res = await fetch("/api/seed-sample-data", { method: "POST" });
+        const data = await res.json();
+        alert(data.message || "Sample data berhasil dimuat!");
+        loadAccounts();
+        loadPosts();
+      } catch (err) {
+        alert(`Gagal memuat sample data: ${err.message}`);
+      }
+    });
+  }
 
   // Initial load
   loadAccounts();
