@@ -33,6 +33,30 @@ class Account:
 
     def to_dict(self) -> dict:
         return asdict(self)
+@dataclass
+class Topic:
+    id: str
+    keyword: str
+    category: str
+    created_at: str
+
+    @classmethod
+    def create(
+        cls,
+        keyword: str,
+        category: str = "Umum",
+        topic_id: Optional[str] = None,
+        created_at: Optional[str] = None,
+    ) -> Topic:
+        return cls(
+            id=topic_id or str(uuid.uuid4()),
+            keyword=keyword.strip().lower(),
+            category=category.strip(),
+            created_at=created_at or datetime.now(timezone.utc).isoformat(),
+        )
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
@@ -48,6 +72,7 @@ class Post:
     posted_at: str
     scraped_at: str
     platform: str = ""
+    topic: str = ""
     @classmethod
     def create(
         cls,
@@ -62,6 +87,7 @@ class Post:
         scraped_at: Optional[str] = None,
         post_id: Optional[str] = None,
         platform: str = "",
+        topic: str = "",
     ) -> Post:
         return cls(
             id=post_id or str(uuid.uuid4()),
@@ -75,6 +101,7 @@ class Post:
             posted_at=posted_at or datetime.now(timezone.utc).isoformat(),
             scraped_at=scraped_at or datetime.now(timezone.utc).isoformat(),
             platform=platform.lower() if platform else "",
+            topic=topic.strip().lower() if topic else "",
         )
 
     def to_dict(self) -> dict:

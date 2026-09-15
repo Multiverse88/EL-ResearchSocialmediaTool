@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
-from .models import Account
+from .models import Account, Post, Topic
 from .db import Database
 from .ingest import ingest_scraped_batch
 
@@ -75,6 +75,7 @@ def generate_sample_posts(num_posts_per_account: int = 25, seed: int = 42):
                     "comments": comments,
                     "video_view_count": rng.randint(likes * 3, likes * 25) if (i % 3 == 0) else None,
                     "date_utc": post_time.isoformat(),
+                    "topic": kw.lower().strip(),
                 })
             else:  # tiktok
                 views = rng.randint(likes * 5, likes * 35)
@@ -88,6 +89,7 @@ def generate_sample_posts(num_posts_per_account: int = 25, seed: int = 42):
                         "playCount": views,
                     },
                     "createTime": int(post_time.timestamp()),
+                    "topic": kw.lower().strip(),
                 })
         account_posts[acc.id] = raw_posts
 
@@ -96,6 +98,11 @@ def generate_sample_posts(num_posts_per_account: int = 25, seed: int = 42):
 
 def seed_marketing_sample_data(db: Database, posts_per_account: int = 25) -> Tuple[int, int]:
     """Seeds sample data into the database."""
+    # Register all topics
+    for kw in KEYWORDS:
+        category = "Legalitas & Izin" if any(x in kw for x in ["PT", "OSS", "izin", "akta", "BPOM"]) else ("Pajak & Keuangan" if "pajak" in kw or "SPT" in kw or "NPWP" in kw or "bank" in kw else "Properti & HKI")
+        db.upsert_topic(Topic.create(keyword=kw, category=category))
+
     accounts, account_posts = generate_sample_posts(num_posts_per_account=posts_per_account)
     total_ingested = 0
     for acc in accounts:

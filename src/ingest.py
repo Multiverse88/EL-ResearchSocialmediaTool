@@ -49,6 +49,7 @@ def normalize_instagram_post(raw: Dict[str, Any], account_id: str) -> Post:
         posted_at=posted_at,
         scraped_at=scraped_at,
         platform="instagram",
+        topic=str(raw.get("topic", "")),
     )
 
 
@@ -83,6 +84,7 @@ def normalize_tiktok_post(raw: Dict[str, Any], account_id: str) -> Post:
         posted_at=posted_at,
         scraped_at=scraped_at,
         platform="tiktok",
+        topic=str(raw.get("topic", "")),
     )
 
 

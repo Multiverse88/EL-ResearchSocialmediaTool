@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
-from .models import Account, Post, ScrapeLog
+from .models import Account, Post, ScrapeLog, Topic
 
 
 SCHEMA_SQL = """
@@ -11,6 +11,7 @@ PRAGMA synchronous = NORMAL;
 PRAGMA temp_store = MEMORY;
 PRAGMA cache_size = -64000;
 PRAGMA mmap_size = 268435456;
+
 CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY,
     platform TEXT NOT NULL,
@@ -22,10 +23,20 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE INDEX IF NOT EXISTS idx_accounts_platform_username ON accounts(platform, username);
 
+CREATE TABLE IF NOT EXISTS topics (
+    id TEXT PRIMARY KEY,
+    keyword TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL DEFAULT 'Umum',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_topics_keyword ON topics(keyword);
+
 CREATE TABLE IF NOT EXISTS posts (
     id TEXT PRIMARY KEY,
     account_id TEXT NOT NULL,
     platform TEXT NOT NULL DEFAULT '',
+    topic TEXT NOT NULL DEFAULT '',
     platform_post_id TEXT NOT NULL,
     caption TEXT NOT NULL,
     media_url TEXT NOT NULL,
@@ -40,6 +51,8 @@ CREATE TABLE IF NOT EXISTS posts (
 
 CREATE INDEX IF NOT EXISTS idx_posts_account_posted_at ON posts(account_id, posted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_platform_posted ON posts(platform, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_likes ON posts(likes DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at DESC);
 
 CREATE TABLE IF NOT EXISTS scrape_logs (
@@ -52,13 +65,6 @@ CREATE TABLE IF NOT EXISTS scrape_logs (
 
 CREATE INDEX IF NOT EXISTS idx_scrape_logs_platform_run ON scrape_logs(platform, run_at DESC);
 """
-
-
-POST_COLS = (
-    "id", "account_id", "platform", "username",
-    "platform_post_id", "caption", "media_url",
-    "likes", "comments", "views", "posted_at", "scraped_at"
-)
 
 SUMMARY_COLS = (
     "total_posts", "total_likes", "avg_likes", "total_comments",
@@ -84,6 +90,7 @@ class Database:
 
     def close(self) -> None:
         self.conn.close()
+
     # Accounts
     def upsert_account(self, account: Account) -> Account:
         with self.conn:
@@ -180,7 +187,8 @@ class Database:
             self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
             self._account_usernames[acc.id] = acc.username
         return accounts
-    # Posts
+
+    # Posts & Ingestion
     def upsert_posts(self, posts: List[Post]) -> int:
         if not posts:
             return 0
@@ -189,10 +197,12 @@ class Database:
             plat = p.platform
             if not plat and p.account_id in self._accounts_by_id:
                 plat = self._accounts_by_id[p.account_id].platform
+            topic_val = getattr(p, "topic", "") or ""
             records.append((
                 p.id,
                 p.account_id,
                 plat,
+                topic_val,
                 p.platform_post_id,
                 p.caption,
                 p.media_url,
@@ -206,11 +216,12 @@ class Database:
             cursor = self.conn.executemany(
                 """
                 INSERT INTO posts (
-                    id, account_id, platform, platform_post_id, caption, media_url,
+                    id, account_id, platform, topic, platform_post_id, caption, media_url,
                     likes, comments, views, posted_at, scraped_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_id, platform_post_id) DO UPDATE SET
                     platform = excluded.platform,
+                    topic = excluded.topic,
                     caption = excluded.caption,
                     media_url = excluded.media_url,
                     likes = excluded.likes,
@@ -230,6 +241,8 @@ class Database:
         platform: Optional[str] = None,
         username: Optional[str] = None,
         keyword: Optional[str] = None,
+        topic: Optional[str] = None,
+        order_by: str = "posted_at",
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         limit: int = 50,
@@ -258,9 +271,13 @@ class Database:
         elif platform:
             clauses.append("platform = ?")
             params.append(platform.lower())
-        if keyword:
+
+        if topic:
+            clauses.append("(topic = ? OR caption LIKE ?)")
+            params.extend([topic.lower().strip(), f"%{topic.strip()}%"])
+        elif keyword:
             clauses.append("caption LIKE ?")
-            params.append(f"%{keyword}%")
+            params.append(f"%{keyword.strip()}%")
 
         if date_from:
             clauses.append("posted_at >= ?")
@@ -272,13 +289,21 @@ class Database:
 
         where_clause = "WHERE " + " AND ".join(clauses) if clauses else ""
 
+        order_col = "posted_at DESC"
+        if order_by == "likes":
+            order_col = "likes DESC"
+        elif order_by == "views":
+            order_col = "views DESC"
+        elif order_by == "comments":
+            order_col = "comments DESC"
+
         sql = f"""
             SELECT
                 id, account_id, platform, platform_post_id, caption, media_url,
-                likes, comments, views, posted_at, scraped_at
+                likes, comments, views, posted_at, scraped_at, topic
             FROM posts
             {where_clause}
-            ORDER BY posted_at DESC
+            ORDER BY {order_col}
             LIMIT ? OFFSET ?
         """
         params.extend([limit, offset])
@@ -301,8 +326,10 @@ class Database:
                 "views": r[8],
                 "posted_at": r[9],
                 "scraped_at": r[10],
+                "topic": r[11] if len(r) > 11 else "",
             })
         return res
+
     def get_account_summary(self, account_id: str) -> Optional[Dict[str, Any]]:
         if account_id in self._account_summaries:
             return self._account_summaries[account_id]
@@ -338,6 +365,131 @@ class Database:
         posts = self.query_posts(account_id=account_id, limit=limit)
         self._top_posts[cache_key] = posts
         return posts
+
+    # Topics & Content Research Methods
+    def upsert_topic(self, topic: Topic) -> Topic:
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO topics (id, keyword, category, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(keyword) DO UPDATE SET
+                    category = excluded.category
+                RETURNING id, keyword, category, created_at;
+                """,
+                (topic.id, topic.keyword.lower().strip(), topic.category, topic.created_at),
+            )
+            row = cursor.fetchone()
+            return Topic(
+                id=row[0],
+                keyword=row[1],
+                category=row[2],
+                created_at=row[3],
+            )
+
+    def list_topics(self) -> List[Topic]:
+        cursor = self.conn.execute("SELECT id, keyword, category, created_at FROM topics ORDER BY keyword ASC")
+        return [Topic(id=r[0], keyword=r[1], category=r[2], created_at=r[3]) for r in cursor.fetchall()]
+
+    def get_topic_summary(self, keyword: str, platform: Optional[str] = None) -> Dict[str, Any]:
+        clean_kw = keyword.strip().lower()
+        clauses = ["(topic = ? OR caption LIKE ?)"]
+        params: List[Any] = [clean_kw, f"%{clean_kw}%"]
+        if platform:
+            clauses.append("platform = ?")
+            params.append(platform.lower())
+
+        where_sql = "WHERE " + " AND ".join(clauses)
+        sql = f"""
+            SELECT
+                COUNT(*),
+                COALESCE(SUM(likes), 0),
+                COALESCE(AVG(likes), 0.0),
+                COALESCE(MAX(likes), 0),
+                COALESCE(SUM(comments), 0),
+                COALESCE(AVG(comments), 0.0),
+                COALESCE(SUM(views), 0),
+                COALESCE(AVG(views), 0.0),
+                COALESCE(MAX(views), 0)
+            FROM posts
+            {where_sql}
+        """
+        cursor = self.conn.execute(sql, params)
+        row = cursor.fetchone()
+
+        total_posts = row[0]
+        total_likes = row[1]
+        avg_likes = round(row[2], 1)
+        max_likes = row[3]
+        total_comments = row[4]
+        avg_comments = round(row[5], 1)
+        total_views = row[6]
+        avg_views = round(row[7], 1)
+        max_views = row[8]
+
+        # Engagement Rate
+        if total_views > 0:
+            er = round(((total_likes + total_comments) / total_views) * 100, 2)
+        elif total_posts > 0:
+            er = round((total_likes + total_comments) / total_posts, 1)
+        else:
+            er = 0.0
+
+        # Fetch top viral posts for this topic
+        viral_posts = self.query_posts(topic=clean_kw, platform=platform, order_by="likes", limit=5)
+
+        return {
+            "status": "success",
+            "keyword": clean_kw,
+            "platform": platform or "all",
+            "total_posts": total_posts,
+            "total_likes": total_likes,
+            "avg_likes": avg_likes,
+            "max_likes": max_likes,
+            "total_comments": total_comments,
+            "avg_comments": avg_comments,
+            "total_views": total_views,
+            "avg_views": avg_views,
+            "max_views": max_views,
+            "engagement_rate": er,
+            "viral_references": [
+                {
+                    "id": p["id"],
+                    "platform": p["platform"],
+                    "username": p["username"],
+                    "caption": p["caption"][:140] + ("..." if len(p["caption"]) > 140 else ""),
+                    "likes": p["likes"],
+                    "comments": p["comments"],
+                    "views": p["views"],
+                    "posted_at": p["posted_at"],
+                }
+                for p in viral_posts
+            ],
+        }
+
+    def compare_topics(self, keywords: List[str]) -> Dict[str, Any]:
+        summaries = [self.get_topic_summary(kw) for kw in keywords if kw.strip()]
+        ranked = sorted(summaries, key=lambda s: s.get("avg_likes", 0), reverse=True)
+        for idx, r in enumerate(ranked):
+            r["rank"] = idx + 1
+
+        return {
+            "status": "success",
+            "compared_topics": len(summaries),
+            "leaderboard": [
+                {
+                    "rank": r["rank"],
+                    "keyword": r["keyword"],
+                    "total_posts": r["total_posts"],
+                    "avg_likes": r["avg_likes"],
+                    "max_likes": r["max_likes"],
+                    "avg_views": r["avg_views"],
+                    "engagement_rate": r["engagement_rate"],
+                }
+                for r in ranked
+            ],
+            "details": summaries,
+        }
 
     # Scrape Logs
     def insert_scrape_log(self, log: ScrapeLog) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import anthropic
@@ -12,15 +13,27 @@ from .tools import CLAUDE_TOOLS_SPEC, execute_claude_tool
 logger = logging.getLogger("backend.claude")
 
 DEFAULT_SYSTEM_PROMPT = """
-Anda adalah AI Social Media & Marketing Intelligence Assistant untuk EasyCorp (EasyLegal, EasyTax, EasyOffice).
-Tugas Anda adalah menjawab pertanyaan tim marketing mengenai data dan performa akun sosial media (Instagram dan TikTok) brand sendiri maupun kompetitor berdasarkan data yang telah discrape ke dalam database.
+Anda adalah AI Social Media Content & Topic Researcher untuk EasyCorp (EasyLegal, EasyTax, EasyOffice).
+Fokus utama Anda adalah melakukan riset topik dan kata kunci konten media sosial (Instagram & TikTok), menganalisis tren performa, menemukan konten viral, dan merekomendasikan ide konten berkinerja tinggi bagi tim marketing.
 
 Panduan:
-1. SELALU panggil tools yang tersedia (search_scraped_posts, get_engagement_summary, compare_accounts) untuk mengambil data nyata sebelum menjawab. Jangan menebak angka atau performa.
-2. Jelaskan metrik utama seperti total posts, rata-rata likes, comments, views, dan engagement rate secara objektif dan berbasis fakta.
-3. Jawab dalam Bahasa Indonesia yang profesional, ramah, dan solutif untuk tim marketing.
-4. Sertakan rekomendasi taktis jika relevan (misalnya konten dengan likes tinggi membahas topik apa).
+1. SELALU panggil tools yang tersedia untuk mengambil data nyata sebelum menjawab:
+   - `research_topic`: Gunakan untuk melihat statistik total konten, likes rata-rata, views, dan engagement rate dari suatu kata kunci/topik.
+   - `find_viral_content`: Gunakan untuk melihat contoh konten viral dengan interaksi tertinggi sebagai bahan inspirasi hook & caption.
+   - `compare_topics`: Gunakan untuk membandingkan potensi minat audiens antar beberapa kata kunci (misal 'pendirian PT' vs 'virtual office').
+   - `search_scraped_posts`: Gunakan untuk memfilter postingan spesifik.
+2. Jelaskan metrik utama secara objektif dan berbasis angka riil.
+3. Berikan rekomendasi taktis (misal: "Topik ini memiliki likes rata-rata X, format video di TikTok memiliki views 4x lebih tinggi, disarankan membuat konten dengan angle tips praktis").
+4. Jawab dalam Bahasa Indonesia yang profesional, ramah, dan solutif untuk tim marketing.
 """
+
+KNOWN_TOPICS = [
+    "pendirian pt", "izin usaha oss", "konsultasi pajak", "merek dagang hki",
+    "kontrak kerja", "perjanjian bisnis", "perizinan", "laporan spt tahunan",
+    "sewa virtual office", "npwp badan usaha", "perubahan akta", "legalitas umkm",
+    "biaya pembuatan pt", "syarat izin edar bpom", "rekening bank perusahaan",
+    "pt pma", "virtual office", "pajak", "hki", "merek", "oss",
+]
 
 
 class ClaudeChatHandler:
@@ -41,7 +54,7 @@ class ClaudeChatHandler:
         conversation_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
-        Processes a marketing query.
+        Processes a marketing topic research query.
         Uses Claude API with tool use if ANTHROPIC_API_KEY is available,
         otherwise uses local intent matching fallback.
         """
@@ -82,7 +95,6 @@ class ClaudeChatHandler:
             tools=CLAUDE_TOOLS_SPEC,
         )
 
-        # Check if Claude requested tool execution
         if response.stop_reason == "tool_use":
             tool_calls = [block for block in response.content if block.type == "tool_use"]
             tool_result_contents = []
@@ -103,14 +115,13 @@ class ClaudeChatHandler:
                 tool_result_contents.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
-                    "content": json.dumps(tool_output),
+                    "content": json.dumps(tool_output, ensure_ascii=False),
                 })
 
-            # Append assistant's response (containing tool call blocks) and tool results
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": tool_result_contents})
 
-            # Step 2: Final response from Claude synthesizing the tool results
+            # Step 2: Final response from Claude synthesizing tool output
             final_response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
@@ -134,7 +145,6 @@ class ClaudeChatHandler:
             }
 
         else:
-            # Direct text response without tool call
             final_text = ""
             for block in response.content:
                 if block.type == "text":
@@ -151,82 +161,136 @@ class ClaudeChatHandler:
             }
 
     def _local_fallback_handler(self, db: Database, message: str) -> Dict[str, Any]:
-        """Local intent parser and tool execution when Claude API key is not present."""
+        """Local topic and keyword intent handler when Claude API key is not present."""
         msg_lower = message.lower()
         accounts = db.list_accounts()
 
-        # Intent: Compare Accounts
-        if any(w in msg_lower for w in ["banding", "vs", "versus", "compare", "kompetitor"]):
-            matched = [a.username for a in accounts if a.username.lower() in msg_lower]
-            if len(matched) < 2 and len(accounts) >= 2:
-                matched = [a.username for a in accounts[:3]]
-            tool_res = execute_claude_tool(db, "compare_accounts", {"usernames": matched})
-            
-            top_ranked = tool_res.get("leaderboard_by_avg_likes", [])
-            leader_txt = f"@{top_ranked[0]['username']}" if top_ranked else "belum ada data"
+        # 1. Compare Topics Intent
+        if any(w in msg_lower for w in ["bandingkan topik", "bandingkan kata kunci", "compare topik", "vs", "versus"]):
+            found_topics = [t for t in KNOWN_TOPICS if t in msg_lower]
+            if len(found_topics) < 2:
+                found_topics = ["pendirian pt", "virtual office", "konsultasi pajak"]
+            tool_res = execute_claude_tool(db, "compare_topics", {"keywords": found_topics})
+            leaderboard = tool_res.get("leaderboard", [])
+            top_t = leaderboard[0]["keyword"] if leaderboard else "N/A"
             reply = (
-                f"Berdasarkan analisis perbandingan akun {', '.join(['@'+u for u in matched])}:\n"
-                f"- Akun dengan rata-rata likes tertinggi adalah {leader_txt}.\n"
-                f"- Rincian performa lengkap dapat dilihat pada breakdown data di bawah."
+                f"Hasil riset perbandingan topik konten:\n"
+                f"- Topik dengan antusiasme & likes tertinggi: **'{top_t}'**.\n"
+                f"- Peringkat topik:\n" +
+                "\n".join([f"  {r['rank']}. **{r['keyword']}** — rata-rata {r['avg_likes']:,} likes, {r['avg_views']:,} views" for r in leaderboard]) +
+                f"\n\nRekomendasi: Fokuskan pilar konten utama pada topik peringkat teratas untuk memaksimalkan jangkauan organik."
             )
             return {
                 "status": "success",
                 "user_query": message,
-                "tool_used": "compare_accounts",
-                "tools_used": ["compare_accounts"],
-                "tool_results": [{"tool": "compare_accounts", "input": {"usernames": matched}, "output": tool_res}],
+                "tool_used": "compare_topics",
+                "tools_used": ["compare_topics"],
+                "tool_results": [{"tool": "compare_topics", "input": {"keywords": found_topics}, "output": tool_res}],
                 "reply": reply,
             }
 
-        # Intent: Engagement Summary
-        if any(w in msg_lower for w in ["engagement", "rata-rata", "average", "summary", "performa", "likes", "komentar"]):
-            target_acc = None
-            for a in accounts:
-                if a.username.lower() in msg_lower:
-                    target_acc = a
+        # 2. Viral Content / Idea Inspiration Intent
+        if any(w in msg_lower for w in ["viral", "tertinggi", "terbanyak", "contoh", "ide konten", "hook"]):
+            kw = None
+            for t in KNOWN_TOPICS:
+                if t in msg_lower:
+                    kw = t
                     break
-            if not target_acc and accounts:
-                target_acc = accounts[0]
-
-            if target_acc:
-                tool_res = execute_claude_tool(
-                    db,
-                    "get_engagement_summary",
-                    {"username": target_acc.username, "platform": target_acc.platform},
-                )
-                sum_d = tool_res.get("summary", {})
+            if not kw:
+                kw = "pendirian pt"
+            tool_res = execute_claude_tool(db, "find_viral_content", {"keyword": kw, "limit": 3})
+            posts = tool_res.get("viral_posts", [])
+            if posts:
+                post_bullets = "\n".join([
+                    f"- [{p['platform'].upper()}] @{p['username']}: \"{p['caption'][:100]}...\" (👍 {p['likes']:,} likes, 👁️ {p['views']:,} views)"
+                    for p in posts
+                ])
                 reply = (
-                    f"Ringkasan performa akun @{target_acc.username} ({target_acc.platform}):\n"
-                    f"- Total postingan: {sum_d.get('total_posts', 0)} post\n"
-                    f"- Rata-rata likes: {sum_d.get('avg_likes', 0):,}\n"
-                    f"- Rata-rata komentar: {sum_d.get('avg_comments', 0):,}\n"
-                    f"- Rata-rata views: {sum_d.get('avg_views', 0):,}\n"
-                    f"- Engagement rate: {sum_d.get('engagement_rate', 0)}%"
+                    f"Berikut referensi konten paling viral untuk topik **'{kw}'**:\n\n"
+                    f"{post_bullets}\n\n"
+                    f"**Pola Keberhasilan**: Konten yang mendapatkan interaksi tinggi umumnya menggunakan hook masalah nyata (misal: 'Jangan sampai salah izin OSS', 'Biaya bikin PT vs CV') dan menyajikan solusi langkah demi langkah."
+                )
+            else:
+                reply = f"Belum ditemukan postingan viral untuk topik '{kw}'. Jalankan scraper kata kunci terlebih dahulu."
+            return {
+                "status": "success",
+                "user_query": message,
+                "tool_used": "find_viral_content",
+                "tools_used": ["find_viral_content"],
+                "tool_results": [{"tool": "find_viral_content", "input": {"keyword": kw}, "output": tool_res}],
+                "reply": reply,
+            }
+
+        # 3. Research Specific Topic Intent
+        for t in KNOWN_TOPICS:
+            if t in msg_lower:
+                tool_res = execute_claude_tool(db, "research_topic", {"keyword": t})
+                total_p = tool_res.get("total_posts", 0)
+                avg_l = tool_res.get("avg_likes", 0)
+                max_l = tool_res.get("max_likes", 0)
+                avg_v = tool_res.get("avg_views", 0)
+                er = tool_res.get("engagement_rate", 0)
+                reply = (
+                    f"📊 **Hasil Riset Topik: '{t}'** di Media Sosial:\n"
+                    f"- Total postingan termonitor: **{total_p} post**\n"
+                    f"- Rata-rata likes per post: **{avg_l:,} likes**\n"
+                    f"- Puncak likes tertinggi: **{max_l:,} likes**\n"
+                    f"- Rata-rata views (TikTok/Reels): **{avg_v:,} views**\n"
+                    f"- Engagement rate rata-rata: **{er}%**\n\n"
+                    f"💡 **Insight Riset**: Topik '{t}' memiliki interaksi yang stabil. Di TikTok, format video penjelasan singkat dengan visual akta/dokumen menghasilkan views di atas rata-rata."
                 )
                 return {
                     "status": "success",
                     "user_query": message,
-                    "tool_used": "get_engagement_summary",
-                    "tools_used": ["get_engagement_summary"],
-                    "tool_results": [{"tool": "get_engagement_summary", "input": {"username": target_acc.username, "platform": target_acc.platform}, "output": tool_res}],
+                    "tool_used": "research_topic",
+                    "tools_used": ["research_topic"],
+                    "tool_results": [{"tool": "research_topic", "input": {"keyword": t}, "output": tool_res}],
                     "reply": reply,
                 }
 
-        # Intent: Search Posts
-        stop_words = {"cari", "post", "posting", "tentang", "yang", "akun", "bulan", "ini", "apakah", "ada", "konten"}
+        # 4. Fallback Account Summary
+        matched_acc = None
+        for a in accounts:
+            if a.username.lower() in msg_lower:
+                matched_acc = a
+                break
+
+        if matched_acc:
+            tool_res = execute_claude_tool(db, "get_engagement_summary", {"username": matched_acc.username, "platform": matched_acc.platform})
+            s = tool_res.get("summary", {})
+            reply = (
+                f"Ringkasan akun @{matched_acc.username} ({matched_acc.platform}):\n"
+                f"- Total postingan: {s.get('total_posts', 0)}\n"
+                f"- Rata-rata likes: {s.get('avg_likes', 0):,}\n"
+                f"- Rata-rata views: {s.get('avg_views', 0):,}\n"
+                f"- Engagement rate: {s.get('engagement_rate', 0)}%"
+            )
+            return {
+                "status": "success",
+                "user_query": message,
+                "tool_used": "get_engagement_summary",
+                "tools_used": ["get_engagement_summary"],
+                "tool_results": [{"tool": "get_engagement_summary", "input": {"username": matched_acc.username, "platform": matched_acc.platform}, "output": tool_res}],
+                "reply": reply,
+            }
+
+        # 5. Default keyword search
+        stop_words = {"riset", "cari", "topik", "konten", "apa", "yang", "tentang", "bagaimana", "media", "sosial"}
         words = [w for w in msg_lower.split() if len(w) > 2 and w not in stop_words]
-        keyword = words[0] if words else None
-        
-        tool_res = execute_claude_tool(db, "search_scraped_posts", {"keyword": keyword, "limit": 10})
-        count = tool_res.get("count", 0)
-        kw_txt = f"kata kunci '{keyword}'" if keyword else "semua kriteria"
-        reply = f"Ditemukan {count} postingan dengan {kw_txt}. Silakan lihat daftar postingan di bawah untuk detail interaksi dan caption."
-        
+        kw = words[0] if words else "pendirian PT"
+        tool_res = execute_claude_tool(db, "research_topic", {"keyword": kw})
+        reply = (
+            f"Hasil riset kata kunci **'{kw}'**:\n"
+            f"- Total postingan: {tool_res.get('total_posts', 0)} post\n"
+            f"- Rata-rata likes: {tool_res.get('avg_likes', 0):,}\n"
+            f"- Rata-rata views: {tool_res.get('avg_views', 0):,}\n"
+            f"- Engagement rate: {tool_res.get('engagement_rate', 0)}%"
+        )
         return {
             "status": "success",
             "user_query": message,
-            "tool_used": "search_scraped_posts",
-            "tools_used": ["search_scraped_posts"],
-            "tool_results": [{"tool": "search_scraped_posts", "input": {"keyword": keyword}, "output": tool_res}],
+            "tool_used": "research_topic",
+            "tools_used": ["research_topic"],
+            "tool_results": [{"tool": "research_topic", "input": {"keyword": kw}, "output": tool_res}],
             "reply": reply,
         }

@@ -72,7 +72,14 @@ class CreateAccountRequest(BaseModel):
     username: str = Field(..., description="Account username without @")
     is_own_brand: bool = Field(False, description="True if EasyCorp brand, False if competitor")
 
+class CreateTopicRequest(BaseModel):
+    keyword: str = Field(..., description="Kata kunci topik riset (contoh: 'pendirian PT')")
+    category: str = Field("Umum", description="Kategori topik (Legalitas, Pajak, Office, dll)")
 
+
+class ScrapeTopicRequest(BaseModel):
+    keyword: str = Field(..., description="Kata kunci yang ingin discrape kontennya")
+    max_posts: int = Field(25, ge=5, le=100)
 class ChatRequest(BaseModel):
     message: Optional[str] = None
     messages: Optional[List[Dict[str, Any]]] = None
@@ -135,17 +142,21 @@ def get_posts(
     platform: Optional[str] = Query(None),
     username: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
+    topic: Optional[str] = Query(None),
+    order_by: str = Query("posted_at", description="Sort by: posted_at | likes | views | comments"),
     date_from: Optional[str] = Query(None, alias="from"),
     date_to: Optional[str] = Query(None, alias="to"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """GET /posts?account_id=&from=&to=&keyword=&platform=&limit=&offset="""
+    """GET /posts?keyword=&topic=&platform=&order_by=&limit=&offset="""
     posts = get_db().query_posts(
         account_id=account_id,
         platform=platform,
         username=username,
         keyword=keyword,
+        topic=topic,
+        order_by=order_by,
         date_from=date_from,
         date_to=date_to,
         limit=limit,
@@ -201,6 +212,74 @@ def get_posts_summary(
         "account": target_account.to_dict(),
         "summary": summary,
     }
+
+# Topic Research Endpoints
+
+@app.get("/topics")
+def list_topics():
+    """GET /topics - List topik/kata kunci yang sedang diriset."""
+    topics = get_db().list_topics()
+    return {
+        "status": "success",
+        "count": len(topics),
+        "data": [t.to_dict() for t in topics],
+    }
+
+
+@app.post("/topics")
+def create_topic(payload: CreateTopicRequest):
+    """POST /topics - Daftarkan kata kunci / topik baru untuk riset."""
+    from .models import Topic
+    topic = Topic.create(keyword=payload.keyword, category=payload.category)
+    saved = get_db().upsert_topic(topic)
+    return {
+        "status": "success",
+        "message": f"Topik '{saved.keyword}' berhasil didaftarkan untuk riset",
+        "data": saved.to_dict(),
+    }
+
+
+@app.get("/topics/summary")
+def get_topic_summary_endpoint(
+    keyword: str = Query(..., description="Kata kunci yang ingin diriset"),
+    platform: Optional[str] = Query(None, description="Filter: instagram | tiktok"),
+):
+    """GET /topics/summary?keyword=&platform= - Riset performa topik dan postingan viral."""
+    summary = get_db().get_topic_summary(keyword=keyword, platform=platform)
+    return {
+        "status": "success",
+        "data": summary,
+    }
+
+
+@app.get("/topics/compare")
+def compare_topics_endpoint(
+    keywords: str = Query(..., description="Daftar kata kunci dipisah koma (misal: 'pendirian PT,virtual office,pajak')"),
+):
+    """GET /topics/compare?keywords= - Bandingkan performa antar beberapa topik konten."""
+    kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+    result = get_db().compare_topics(kw_list)
+    return {
+        "status": "success",
+        "data": result,
+    }
+
+
+@app.post("/topics/scrape")
+def scrape_topic_endpoint(payload: ScrapeTopicRequest, background_tasks: BackgroundTasks):
+    """POST /topics/scrape - Trigger scraping konten media sosial berdasarkan topik/hashtag."""
+    from .scrapers.keyword_scraper import scrape_topic_content
+    background_tasks.add_task(
+        scrape_topic_content,
+        db=get_db(),
+        keyword=payload.keyword,
+        max_posts_per_platform=payload.max_posts,
+    )
+    return {
+        "status": "accepted",
+        "message": f"Scraping konten untuk topik '{payload.keyword}' dimulai di background.",
+    }
+
 
 
 @app.post("/chat")

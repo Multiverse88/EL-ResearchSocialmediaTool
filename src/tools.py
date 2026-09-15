@@ -7,11 +7,73 @@ from .db import Database
 # Claude API Tool Specifications
 CLAUDE_TOOLS_SPEC = [
     {
-        "name": "search_scraped_posts",
-        "description": "Cari post sosial media (Instagram/TikTok) berdasarkan kriteria platform, username, kata kunci caption, dan rentang tanggal.",
+        "name": "research_topic",
+        "description": "Lakukan riset mendalam performa suatu topik/kata kunci konten di Instagram & TikTok (total post, likes rata-rata, views rata-rata, engagement rate, dan postingan paling viral). Gunakan ini jika user menanyakan topik, tren, atau keyword tertentu.",
         "input_schema": {
             "type": "object",
             "properties": {
+                "keyword": {
+                    "type": "string",
+                    "description": "Kata kunci atau topik yang ingin diriset (contoh: 'pendirian PT', 'virtual office', 'pajak UMKM', 'merek')",
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": ["instagram", "tiktok"],
+                    "description": "Filter platform spesifik (opsional, kosongkan untuk semua platform)",
+                },
+            },
+            "required": ["keyword"],
+        },
+    },
+    {
+        "name": "find_viral_content",
+        "description": "Cari referensi konten dan postingan paling viral (likes dan views tertinggi) untuk suatu topik/kata kunci tertentu sebagai inspirasi ide konten marketing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keyword": {
+                    "type": "string",
+                    "description": "Kata kunci atau topik konten",
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": ["instagram", "tiktok"],
+                    "description": "Filter platform (opsional)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Jumlah postingan viral yang dicari (default 5)",
+                    "default": 5,
+                },
+            },
+            "required": ["keyword"],
+        },
+    },
+    {
+        "name": "compare_topics",
+        "description": "Bandingkan performa engagement dan antusiasme audiens antar beberapa topik/kata kunci konten untuk menentukan topik prioritas marketing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Daftar kata kunci atau topik yang ingin dibandingkan (contoh: ['pendirian PT', 'virtual office', 'pajak'])",
+                },
+            },
+            "required": ["keywords"],
+        },
+    },
+    {
+        "name": "search_scraped_posts",
+        "description": "Cari postingan media sosial berdasarkan kata kunci caption, akun, atau rentang tanggal.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keyword": {
+                    "type": "string",
+                    "description": "Kata kunci pencarian dalam caption",
+                },
                 "platform": {
                     "type": "string",
                     "enum": ["instagram", "tiktok"],
@@ -19,31 +81,27 @@ CLAUDE_TOOLS_SPEC = [
                 },
                 "username": {
                     "type": "string",
-                    "description": "Username akun yang ingin dicari post-nya",
-                },
-                "keyword": {
-                    "type": "string",
-                    "description": "Kata kunci pencarian dalam caption",
+                    "description": "Username akun (opsional)",
                 },
                 "date_from": {
                     "type": "string",
-                    "description": "Tanggal awal filter (ISO format, mis. 2026-01-01)",
+                    "description": "Tanggal awal filter (ISO format)",
                 },
                 "date_to": {
                     "type": "string",
-                    "description": "Tanggal akhir filter (ISO format, mis. 2026-01-31)",
+                    "description": "Tanggal akhir filter (ISO format)",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Jumlah maksimal post yang dikembalikan (default 20)",
-                    "default": 20,
+                    "description": "Jumlah maksimal post (default 15)",
+                    "default": 15,
                 },
             },
         },
     },
     {
         "name": "get_engagement_summary",
-        "description": "Dapatkan ringkasan statistik performa dan engagement suatu akun sosial media (total post, likes, comments, views, rata-rata, engagement rate).",
+        "description": "Dapatkan ringkasan performa akun tertentu (total post, likes, comments, views, dan engagement rate).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -62,7 +120,7 @@ CLAUDE_TOOLS_SPEC = [
     },
     {
         "name": "compare_accounts",
-        "description": "Bandingkan performa engagement antar beberapa akun sosial media (misal brand sendiri vs kompetitor).",
+        "description": "Bandingkan performa engagement antar beberapa akun sosial media (brand vs kompetitor).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -83,6 +141,56 @@ CLAUDE_TOOLS_SPEC = [
 ]
 
 
+def research_topic(
+    db: Database,
+    keyword: str,
+    platform: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Riset komprehensif performa suatu topik/kata kunci konten."""
+    return db.get_topic_summary(keyword=keyword, platform=platform)
+
+
+def find_viral_content(
+    db: Database,
+    keyword: str,
+    platform: Optional[str] = None,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    """Mencari postingan dengan engagement/likes tertinggi pada topik tertentu."""
+    posts = db.query_posts(
+        topic=keyword,
+        platform=platform,
+        order_by="likes",
+        limit=limit,
+    )
+    return {
+        "status": "success",
+        "topic": keyword,
+        "count": len(posts),
+        "viral_posts": [
+            {
+                "id": p["id"],
+                "platform": p["platform"],
+                "username": p["username"],
+                "caption": p["caption"],
+                "likes": p["likes"],
+                "comments": p["comments"],
+                "views": p["views"],
+                "posted_at": p["posted_at"],
+            }
+            for p in posts
+        ],
+    }
+
+
+def compare_topics_tool(
+    db: Database,
+    keywords: List[str],
+) -> Dict[str, Any]:
+    """Bandingkan performa beberapa topik/kata kunci konten."""
+    return db.compare_topics(keywords=keywords)
+
+
 def search_scraped_posts(
     db: Database,
     platform: Optional[str] = None,
@@ -90,7 +198,7 @@ def search_scraped_posts(
     keyword: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    limit: int = 20,
+    limit: int = 15,
     offset: int = 0,
 ) -> Dict[str, Any]:
     """Cari post sesuai kriteria filter."""
@@ -154,9 +262,6 @@ def get_engagement_summary(
     total_comments = summary["total_comments"]
     total_views = summary["total_views"]
 
-    # Engagement Rate calculation
-    # If views are available (video/TikTok), rate = (likes + comments) / views * 100
-    # Else rate per post = (likes + comments) / total_posts
     if total_views > 0:
         engagement_rate = round(((total_likes + total_comments) / total_views) * 100, 2)
     elif total_posts > 0:
@@ -164,7 +269,6 @@ def get_engagement_summary(
     else:
         engagement_rate = 0.0
 
-    # Top posts by likes
     top_posts = db.get_top_posts(account_id=account.id, limit=3)
 
     return {
@@ -206,7 +310,6 @@ def compare_accounts(
     """Bandingkan performa antar akun (mis. brand vs kompetitor)."""
     results: List[Dict[str, Any]] = []
     
-    # Collect summaries
     all_accounts = db.list_accounts()
     account_map = {}
     for acc in all_accounts:
@@ -218,7 +321,6 @@ def compare_accounts(
         clean_u = u.lower().strip().lstrip("@")
         acc = account_map.get(clean_u)
         if not acc:
-            # Fallback direct lookup
             for p in (["instagram", "tiktok"] if not platform else [platform.lower()]):
                 acc = db.get_account_by_username(p, clean_u)
                 if acc:
@@ -276,7 +378,6 @@ def compare_accounts(
             "engagement_rate": rate,
         })
 
-    # Sort results by avg_likes descending for ranking
     found_results = [r for r in results if r.get("found")]
     ranked = sorted(found_results, key=lambda x: x.get("avg_likes", 0), reverse=True)
     for idx, r in enumerate(ranked):
@@ -302,7 +403,25 @@ def compare_accounts(
 
 def execute_claude_tool(db: Database, tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     """Dispatcher for Claude tool-use tool calls."""
-    if tool_name == "search_scraped_posts":
+    if tool_name == "research_topic":
+        return research_topic(
+            db=db,
+            keyword=tool_input.get("keyword", ""),
+            platform=tool_input.get("platform"),
+        )
+    elif tool_name == "find_viral_content":
+        return find_viral_content(
+            db=db,
+            keyword=tool_input.get("keyword", ""),
+            platform=tool_input.get("platform"),
+            limit=tool_input.get("limit", 5),
+        )
+    elif tool_name == "compare_topics":
+        return compare_topics_tool(
+            db=db,
+            keywords=tool_input.get("keywords", []),
+        )
+    elif tool_name == "search_scraped_posts":
         return search_scraped_posts(
             db=db,
             platform=tool_input.get("platform"),
@@ -310,7 +429,7 @@ def execute_claude_tool(db: Database, tool_name: str, tool_input: Dict[str, Any]
             keyword=tool_input.get("keyword"),
             date_from=tool_input.get("date_from"),
             date_to=tool_input.get("date_to"),
-            limit=tool_input.get("limit", 20),
+            limit=tool_input.get("limit", 15),
             offset=tool_input.get("offset", 0),
         )
     elif tool_name == "get_engagement_summary":

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EasyCorp - Social Media Intelligence & AI Chat</title>
+  <title>EasyCorp - Social Media Content Research & AI Intelligence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,13 +11,13 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Sidebar / Header -->
+    <!-- Header -->
     <header class="app-header">
       <div class="brand">
         <div class="brand-badge">EC</div>
         <div>
-          <h1 class="brand-title">EasyCorp Social Media Intel</h1>
-          <p class="brand-subtitle">Automated Scraper & AI Chat Assistant</p>
+          <h1 class="brand-title">EasyCorp Social Media Intel & Research</h1>
+          <p class="brand-subtitle">Keyword Trend Analysis, Viral Content Benchmark & Open WebUI AI</p>
         </div>
       </div>
       <div class="header-actions">
@@ -37,17 +37,21 @@
 
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
-      <button class="nav-tab active" data-tab="chat-tab">
+      <button class="nav-tab active" data-tab="topics-tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        Riset Topik & Kata Kunci (<span id="topic-count">0</span>)
+      </button>
+      <button class="nav-tab" data-tab="chat-tab">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
         AI Chat Assistant
-      </button>
-      <button class="nav-tab" data-tab="accounts-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        Akun Dimonitor (<span id="account-count">0</span>)
       </button>
       <button class="nav-tab" data-tab="posts-tab">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
         Data Postingan (<span id="post-count">0</span>)
+      </button>
+      <button class="nav-tab" data-tab="accounts-tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Akun Dimonitor (<span id="account-count">0</span>)
       </button>
       <button class="nav-tab" data-tab="logs-tab">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
@@ -58,30 +62,106 @@
     <!-- Main Content Area -->
     <main class="content-container">
 
-      <!-- TAB 1: AI Chat Panel -->
-      <section id="chat-tab" class="tab-pane active">
+      <!-- TAB 1: Riset Topik & Kata Kunci Konten -->
+      <section id="topics-tab" class="tab-pane active">
+        <div class="section-header">
+          <div>
+            <h2>Riset Topik & Kata Kunci Media Sosial</h2>
+            <p>Analisis tren kata kunci, benchmark performa likes/views, dan referensi konten viral di Instagram & TikTok.</p>
+          </div>
+        </div>
+
+        <!-- Search Bar for Topic -->
+        <div class="filter-bar">
+          <input type="text" id="topic-search-input" placeholder="Ketik kata kunci/topik (misal: pendirian PT, virtual office, pajak UMKM, izin OSS)..." />
+          <button id="topic-search-btn" class="btn btn-primary">Riset Kata Kunci</button>
+        </div>
+
+        <!-- Quick Topics Pills -->
+        <div class="chat-prompts" style="border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 20px;">
+          <span class="prompts-label">Pilih Topik Cepat:</span>
+          <button class="prompt-chip topic-pill" data-keyword="pendirian PT">Pendirian PT</button>
+          <button class="prompt-chip topic-pill" data-keyword="virtual office">Virtual Office</button>
+          <button class="prompt-chip topic-pill" data-keyword="pajak UMKM">Pajak UMKM</button>
+          <button class="prompt-chip topic-pill" data-keyword="izin usaha OSS">Izin OSS</button>
+          <button class="prompt-chip topic-pill" data-keyword="merek dagang HKI">Merek HKI</button>
+        </div>
+
+        <!-- Topic Overview Cards -->
+        <div id="topic-results-container">
+          <div class="form-grid" id="topic-stats-grid" style="margin-bottom: 24px;">
+            <div class="panel-card">
+              <div class="brand-subtitle">Total Postingan</div>
+              <h3 id="topic-total-posts" style="font-size: 28px; margin-top: 4px;">-</h3>
+            </div>
+            <div class="panel-card">
+              <div class="brand-subtitle">Rata-Rata Likes</div>
+              <h3 id="topic-avg-likes" style="font-size: 28px; margin-top: 4px; color: #2563eb;">-</h3>
+            </div>
+            <div class="panel-card">
+              <div class="brand-subtitle">Rekor Likes (Viral Peak)</div>
+              <h3 id="topic-max-likes" style="font-size: 28px; margin-top: 4px; color: #db2777;">-</h3>
+            </div>
+            <div class="panel-card">
+              <div class="brand-subtitle">Rata-Rata Views (Video)</div>
+              <h3 id="topic-avg-views" style="font-size: 28px; margin-top: 4px; color: #047857;">-</h3>
+            </div>
+            <div class="panel-card">
+              <div class="brand-subtitle">Engagement Rate</div>
+              <h3 id="topic-er" style="font-size: 28px; margin-top: 4px; color: #7c3aed;">-</h3>
+            </div>
+          </div>
+
+          <!-- Viral Content Table for this Topic -->
+          <div class="table-container">
+            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="font-size: 16px; font-weight: 700;">Referensi Konten Paling Viral untuk Topik Ini</h3>
+              <button id="ask-ai-topic-btn" class="btn btn-secondary btn-sm">Tanyakan Analisis ke AI</button>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Platform</th>
+                  <th>Akun</th>
+                  <th>Caption / Hook</th>
+                  <th>Likes</th>
+                  <th>Komentar</th>
+                  <th>Views</th>
+                  <th>Tanggal</th>
+                </tr>
+              </thead>
+              <tbody id="topic-viral-posts-body">
+                <tr><td colspan="7" class="text-center">Ketik kata kunci di atas atau klik salah satu topik untuk melihat riset.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: AI Chat Assistant -->
+      <section id="chat-tab" class="tab-pane">
         <div class="chat-layout">
           <div class="chat-main">
             <div class="chat-messages" id="chat-messages">
               <div class="message assistant-message">
                 <div class="message-avatar">AI</div>
                 <div class="message-content">
-                  <p>Halo tim marketing! Saya asisten AI untuk memantau performa Instagram & TikTok EasyCorp dan kompetitor. Anda bisa menanyakan apapun terkait data postingan atau ringkasan performa akun.</p>
+                  <p>Halo tim marketing! Saya asisten riset konten media sosial EasyCorp. Tanyakan seputar topik, kata kunci, ide konten viral, atau perbandingan tren di Instagram & TikTok.</p>
                 </div>
               </div>
             </div>
 
             <!-- Suggestion Prompts -->
             <div class="chat-prompts">
-              <span class="prompts-label">Contoh pertanyaan:</span>
-              <button class="prompt-chip" data-query="berapa engagement rata-rata akun easylegal_id bulan ini?">Engagement EasyLegal</button>
-              <button class="prompt-chip" data-query="bandingkan performa akun easylegal_id vs legalku_official">Bandingkan vs Kompetitor</button>
-              <button class="prompt-chip" data-query="cari postingan tentang perizinan usaha dan PT">Cari Post PT/OSS</button>
+              <span class="prompts-label">Contoh riset:</span>
+              <button class="prompt-chip" data-query="riset topik pendirian PT seperti apa performanya di sosial media?">Riset Topik PT</button>
+              <button class="prompt-chip" data-query="konten apa yang paling viral tentang virtual office di Instagram dan TikTok?">Konten Viral Virtual Office</button>
+              <button class="prompt-chip" data-query="bandingkan topik pendirian PT vs virtual office vs konsultasi pajak">Bandingkan 3 Topik</button>
             </div>
 
             <!-- Chat Input Form -->
             <form id="chat-form" class="chat-input-area">
-              <input type="text" id="chat-input" placeholder="Tanyakan seputar performa akun, likes, views, atau konten kompetitor..." autocomplete="off" />
+              <input type="text" id="chat-input" placeholder="Tanyakan seputar riset topik, konten viral, likes, views, atau ide konten marketing..." autocomplete="off" />
               <button type="submit" id="chat-submit-btn" class="btn btn-primary">
                 Kirim
               </button>
@@ -91,23 +171,65 @@
           <!-- Chat Inspector Panel -->
           <div class="chat-sidebar">
             <div class="panel-card">
-              <h3 class="card-title">Tools & Integrasi Open WebUI</h3>
-              <p class="card-desc">AI menggunakan 3 tool utama untuk membaca data dari Postgres/SQLite secara real-time:</p>
+              <h3 class="card-title">Tools Riset AI Open WebUI</h3>
+              <p class="card-desc">AI dilengkapi tools otomatis untuk riset topik & konten:</p>
               <ul class="tool-list">
-                <li><code>search_scraped_posts</code> — Filter konten & kata kunci</li>
-                <li><code>get_engagement_summary</code> — Rata-rata likes/views & ER</li>
-                <li><code>compare_accounts</code> — Leaderboard brand vs kompetitor</li>
+                <li><code>research_topic</code> — Riset performa kata kunci/topik</li>
+                <li><code>find_viral_content</code> — Cari referensi konten viral</li>
+                <li><code>compare_topics</code> — Bandingkan potensi antar topik</li>
+                <li><code>search_scraped_posts</code> — Filter konten & hashtag</li>
               </ul>
               <div class="openwebui-info-box">
-                <h4>Integrasi Open WebUI</h4>
-                <p>Open WebUI sudah terhubung via <code>/v1/chat/completions</code> di stack Docker. Tim marketing dapat membuka interface penuh Open WebUI di port 3000.</p>
+                <h4>Open WebUI</h4>
+                <p>Chat panel utama juga dapat dibuka di Open WebUI secara penuh untuk tim marketing.</p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- TAB 2: Monitored Accounts -->
+      <!-- TAB 3: Posts & Engagement Data -->
+      <section id="posts-tab" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Database Konten Media Sosial</h2>
+            <p>Seluruh postingan hasil scraping Instagram & TikTok yang tersimpan di database.</p>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-bar">
+          <input type="text" id="post-search-keyword" placeholder="Cari keyword caption..." />
+          <select id="post-filter-platform">
+            <option value="">Semua Platform</option>
+            <option value="instagram">Instagram</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+          <button id="post-filter-btn" class="btn btn-secondary">Filter</button>
+        </div>
+
+        <!-- Posts Table -->
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Akun</th>
+                <th>Caption</th>
+                <th>Likes</th>
+                <th>Comments</th>
+                <th>Views</th>
+                <th>Tanggal Post</th>
+              </tr>
+            </thead>
+            <tbody id="posts-table-body">
+              <tr><td colspan="7" class="text-center">Memuat postingan...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 4: Monitored Accounts -->
       <section id="accounts-tab" class="tab-pane">
         <div class="section-header">
           <div>
@@ -117,7 +239,7 @@
           <button id="add-account-toggle-btn" class="btn btn-primary">+ Tambah Akun</button>
         </div>
 
-        <!-- Add Account Card (Hidden by default) -->
+        <!-- Add Account Card -->
         <div id="add-account-card" class="panel-card" style="display: none; margin-bottom: 24px;">
           <h3 class="card-title">Daftarkan Akun Baru</h3>
           <form id="add-account-form" class="form-grid">
@@ -164,53 +286,12 @@
         </div>
       </section>
 
-      <!-- TAB 3: Posts & Engagement Data -->
-      <section id="posts-tab" class="tab-pane">
-        <div class="section-header">
-          <div>
-            <h2>Data Postingan Terkumpul</h2>
-            <p>Data hasil scraping Instagram & TikTok yang tersimpan di database.</p>
-          </div>
-        </div>
-
-        <!-- Filters -->
-        <div class="filter-bar">
-          <input type="text" id="post-search-keyword" placeholder="Cari keyword caption..." />
-          <select id="post-filter-platform">
-            <option value="">Semua Platform</option>
-            <option value="instagram">Instagram</option>
-            <option value="tiktok">TikTok</option>
-          </select>
-          <button id="post-filter-btn" class="btn btn-secondary">Filter</button>
-        </div>
-
-        <!-- Posts Table -->
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Platform</th>
-                <th>Akun</th>
-                <th>Caption</th>
-                <th>Likes</th>
-                <th>Comments</th>
-                <th>Views</th>
-                <th>Tanggal Post</th>
-              </tr>
-            </thead>
-            <tbody id="posts-table-body">
-              <tr><td colspan="7" class="text-center">Memuat postingan...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- TAB 4: Scrape Logs -->
+      <!-- TAB 5: Scrape Logs -->
       <section id="logs-tab" class="tab-pane">
         <div class="section-header">
           <div>
             <h2>Riwayat Log Scraping</h2>
-            <p>Status eksekusi scraping harian dari Dokploy Scheduled Jobs.</p>
+            <p>Status eksekusi scraping terjadwal dari Dokploy Scheduled Jobs.</p>
           </div>
           <button id="refresh-logs-btn" class="btn btn-secondary">Refresh Log</button>
         </div>

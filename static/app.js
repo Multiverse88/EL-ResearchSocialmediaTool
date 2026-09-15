@@ -1,12 +1,28 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // Elements
+  // Navigation elements
   const tabs = document.querySelectorAll(".nav-tab");
   const panes = document.querySelectorAll(".tab-pane");
+
+  // Topic research elements
+  const topicCount = document.getElementById("topic-count");
+  const topicSearchInput = document.getElementById("topic-search-input");
+  const topicSearchBtn = document.getElementById("topic-search-btn");
+  const topicPills = document.querySelectorAll(".topic-pill");
+  const topicTotalPosts = document.getElementById("topic-total-posts");
+  const topicAvgLikes = document.getElementById("topic-avg-likes");
+  const topicMaxLikes = document.getElementById("topic-max-likes");
+  const topicAvgViews = document.getElementById("topic-avg-views");
+  const topicEr = document.getElementById("topic-er");
+  const topicViralPostsBody = document.getElementById("topic-viral-posts-body");
+  const askAiTopicBtn = document.getElementById("ask-ai-topic-btn");
+
+  // Chat elements
   const chatMessages = document.getElementById("chat-messages");
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
   const promptChips = document.querySelectorAll(".prompt-chip");
   const triggerScrapeBtn = document.getElementById("trigger-scrape-btn");
+  const seedDataBtn = document.getElementById("seed-data-btn");
 
   // Accounts elements
   const accountsTableBody = document.getElementById("accounts-table-body");
@@ -27,6 +43,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const logsTableBody = document.getElementById("logs-table-body");
   const refreshLogsBtn = document.getElementById("refresh-logs-btn");
 
+  let currentResearchedTopic = "pendirian PT";
+
   // --- 1. Tab Navigation ---
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -38,13 +56,98 @@ document.addEventListener("DOMContentLoaded", () => {
       if (targetPane) targetPane.classList.add("active");
 
       // Auto load data on tab switch
+      if (tab.dataset.tab === "topics-tab") loadTopics();
       if (tab.dataset.tab === "accounts-tab") loadAccounts();
       if (tab.dataset.tab === "posts-tab") loadPosts();
       if (tab.dataset.tab === "logs-tab") loadLogs();
     });
   });
 
-  // --- 2. Chat Functionality ---
+  // --- 2. Topic & Content Research ---
+  async function loadTopics() {
+    try {
+      const res = await fetch("/topics");
+      const json = await res.json();
+      const topics = json.data || [];
+      if (topicCount) topicCount.textContent = topics.length;
+    } catch (err) {
+      console.error("Gagal memuat topik:", err);
+    }
+  }
+
+  async function researchTopic(keyword) {
+    if (!keyword || !keyword.trim()) return;
+    const cleanKw = keyword.trim();
+    currentResearchedTopic = cleanKw;
+    if (topicSearchInput) topicSearchInput.value = cleanKw;
+
+    topicViralPostsBody.innerHTML = `<tr><td colspan="7" class="text-center">Sedang meriset topik '${cleanKw}'...</td></tr>`;
+
+    try {
+      const res = await fetch(`/topics/summary?keyword=${encodeURIComponent(cleanKw)}`);
+      const json = await res.json();
+      const data = json.data || {};
+
+      topicTotalPosts.textContent = (data.total_posts || 0).toLocaleString();
+      topicAvgLikes.textContent = (data.avg_likes || 0).toLocaleString();
+      topicMaxLikes.textContent = (data.max_likes || 0).toLocaleString();
+      topicAvgViews.textContent = (data.avg_views || 0).toLocaleString();
+      topicEr.textContent = `${data.engagement_rate || 0}%`;
+
+      const viralPosts = data.viral_references || [];
+      if (viralPosts.length === 0) {
+        topicViralPostsBody.innerHTML = `<tr><td colspan="7" class="text-center">Belum ada data untuk topik '${cleanKw}'. Klik tombol 'Isi Sample Data' atau jalankan scraper untuk mengumpulkan konten.</td></tr>`;
+        return;
+      }
+
+      topicViralPostsBody.innerHTML = viralPosts
+        .map((p) => {
+          const platBadge = p.platform === "instagram" ? "badge-ig" : "badge-tt";
+          const formattedDate = p.posted_at ? p.posted_at.substring(0, 10) : "-";
+          return `
+            <tr>
+              <td><span class="badge ${platBadge}">${(p.platform || "").toUpperCase()}</span></td>
+              <td><strong>@${p.username || "-"}</strong></td>
+              <td title="${(p.caption || "").replace(/"/g, "&quot;")}">${p.caption || "-"}</td>
+              <td><strong style="color: #2563eb;">${(p.likes || 0).toLocaleString()}</strong></td>
+              <td>${(p.comments || 0).toLocaleString()}</td>
+              <td>${p.views !== null && p.views !== undefined ? Number(p.views).toLocaleString() : "-"}</td>
+              <td>${formattedDate}</td>
+            </tr>
+          `;
+        })
+        .join("");
+    } catch (err) {
+      topicViralPostsBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Gagal meriset topik: ${err.message}</td></tr>`;
+    }
+  }
+
+  if (topicSearchBtn) {
+    topicSearchBtn.addEventListener("click", () => {
+      researchTopic(topicSearchInput.value);
+    });
+  }
+
+  if (topicSearchInput) {
+    topicSearchInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") researchTopic(topicSearchInput.value);
+    });
+  }
+
+  topicPills.forEach((pill) => {
+    pill.addEventListener("click", () => {
+      researchTopic(pill.dataset.keyword);
+    });
+  });
+
+  if (askAiTopicBtn) {
+    askAiTopicBtn.addEventListener("click", () => {
+      document.querySelector('[data-tab="chat-tab"]').click();
+      sendChatMessage(`Berikan analisis taktis dan ide konten berkinerja tinggi untuk topik '${currentResearchedTopic}'`);
+    });
+  }
+
+  // --- 3. Chat Functionality ---
   function appendMessage(role, text, toolUsed = null) {
     const msgDiv = document.createElement("div");
     msgDiv.className = `message ${role}-message`;
@@ -56,7 +159,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const contentDiv = document.createElement("div");
     contentDiv.className = "message-content";
 
-    // Format newlines into paragraphs
     const paragraphs = text.split("\n").filter((p) => p.trim() !== "");
     if (paragraphs.length === 0) {
       const p = document.createElement("p");
@@ -91,8 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
     appendMessage("user", cleanQuery);
     chatInput.value = "";
 
-    // Show loading placeholder
-    const loadingDiv = appendMessage("assistant", "Sedang menganalisis data...");
+    const loadingDiv = appendMessage("assistant", "Sedang menganalisis tren konten & data media sosial...");
 
     try {
       const res = await fetch("/chat", {
@@ -125,7 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // --- 3. Accounts Management ---
+  // --- 4. Accounts Management ---
   async function loadAccounts() {
     try {
       const res = await fetch("/accounts");
@@ -163,7 +264,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   window.queryAccountSummary = (username, platform) => {
-    // Switch to chat tab and ask
     document.querySelector('[data-tab="chat-tab"]').click();
     sendChatMessage(`Bagaimana ringkasan performa engagement untuk akun @${username} di ${platform}?`);
   };
@@ -193,7 +293,7 @@ document.addEventListener("DOMContentLoaded", () => {
         addAccountForm.reset();
         addAccountCard.style.display = "none";
         loadAccounts();
-        alert(`Akun @${username} berhasil ditambahkan!`);
+        alert(`Akun @${username} berhasil didaftarkan!`);
       } else {
         alert(data.message || "Gagal menambahkan akun.");
       }
@@ -202,7 +302,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // --- 4. Posts Data ---
+  // --- 5. Posts Data ---
   async function loadPosts() {
     const keyword = postSearchKeyword.value.trim();
     const platform = postFilterPlatform.value;
@@ -250,7 +350,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") loadPosts();
   });
 
-  // --- 5. Scrape Controls & Logs ---
+  // --- 6. Scrape Controls & Logs ---
   async function loadLogs() {
     try {
       const res = await fetch("/scrape/logs?limit=50");
@@ -298,7 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
       alert(`Gagal memicu scraping: ${err.message}`);
     }
   });
-  const seedDataBtn = document.getElementById("seed-data-btn");
+
   if (seedDataBtn) {
     seedDataBtn.addEventListener("click", async () => {
       if (!confirm("Isi database dengan sample data postingan Instagram & TikTok untuk riset?")) return;
@@ -306,8 +406,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch("/api/seed-sample-data", { method: "POST" });
         const data = await res.json();
         alert(data.message || "Sample data berhasil dimuat!");
+        loadTopics();
         loadAccounts();
         loadPosts();
+        researchTopic("pendirian PT");
       } catch (err) {
         alert(`Gagal memuat sample data: ${err.message}`);
       }
@@ -315,5 +417,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Initial load
-  loadAccounts();
+  loadTopics();
+  researchTopic("pendirian PT");
 });

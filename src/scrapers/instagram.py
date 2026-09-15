@@ -24,8 +24,9 @@ def create_instaloader_instance() -> instaloader.Instaloader:
         save_metadata=False,
         compress_json=False,
         post_metadata_txt_pattern="",
-        max_connection_attempts=3,
-        request_timeout=30.0,
+        max_connection_attempts=1,
+        request_timeout=15.0,
+        fatal_status_codes=[429],
     )
 
     ig_user = os.getenv("INSTAGRAM_USERNAME")
@@ -104,14 +105,16 @@ def scrape_instagram_profile(
         db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
         return 0, err_msg
 
-    except instaloader.exceptions.LoginRequiredException:
-        err_msg = f"Instagram login required to view @{username} (profile may be private or restricted)"
-        logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
-        return 0, err_msg
-
     except Exception as exc:
-        err_msg = f"Instagram scrape failed for @{username}: {str(exc)}"
+        err_str = str(exc)
+        if "429" in err_str or "Too Many Requests" in err_str:
+            err_msg = (
+                f"Instagram rate limit (429) saat scrape @{username}. "
+                "Instagram membatasi IP cloud/VPS untuk request anonim. "
+                "Solusi: Tambahkan INSTAGRAM_USERNAME & INSTAGRAM_PASSWORD (akun burner) di tab Environment Dokploy."
+            )
+        else:
+            err_msg = f"Instagram scrape failed for @{username}: {err_str}"
         logger.error(err_msg)
         db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
         return 0, err_msg
