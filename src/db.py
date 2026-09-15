@@ -72,6 +72,7 @@ class Database:
         self.conn = sqlite3.connect(db_path)
         self._accounts_by_id: Dict[str, Account] = {}
         self._accounts_by_plat_user: Dict[Tuple[str, str], Account] = {}
+        self._account_usernames: Dict[str, str] = {}
         self._all_accounts: Optional[List[Account]] = None
         self._account_summaries: Dict[str, Optional[Dict[str, Any]]] = {}
         self._top_posts: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
@@ -106,6 +107,7 @@ class Database:
             )
             self._accounts_by_id[saved.id] = saved
             self._accounts_by_plat_user[(saved.platform, saved.username)] = saved
+            self._account_usernames[saved.id] = saved.username
             self._all_accounts = None
             return saved
 
@@ -128,6 +130,7 @@ class Database:
         )
         self._accounts_by_id[acc.id] = acc
         self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
+        self._account_usernames[acc.id] = acc.username
         return acc
 
     def get_account_by_username(self, platform: str, username: str) -> Optional[Account]:
@@ -152,6 +155,7 @@ class Database:
         )
         self._accounts_by_id[acc.id] = acc
         self._accounts_by_plat_user[cache_key] = acc
+        self._account_usernames[acc.id] = acc.username
         return acc
 
     def list_accounts(self) -> List[Account]:
@@ -174,6 +178,7 @@ class Database:
         for acc in accounts:
             self._accounts_by_id[acc.id] = acc
             self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
+            self._account_usernames[acc.id] = acc.username
         return accounts
     # Posts
     def upsert_posts(self, posts: List[Post]) -> int:
@@ -280,15 +285,14 @@ class Database:
 
         cursor = self.conn.execute(sql, params)
         rows = cursor.fetchall()
-        acc_cache = self._accounts_by_id
+        u_get = self._account_usernames.get
         res = []
         for r in rows:
-            acc = acc_cache.get(r[1])
             res.append({
                 "id": r[0],
                 "account_id": r[1],
-                "platform": r[2] or (acc.platform if acc else ""),
-                "username": acc.username if acc else "",
+                "platform": r[2],
+                "username": u_get(r[1], ""),
                 "platform_post_id": r[3],
                 "caption": r[4],
                 "media_url": r[5],
