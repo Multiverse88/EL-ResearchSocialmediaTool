@@ -37,8 +37,7 @@ CREATE TABLE IF NOT EXISTS posts (
     UNIQUE(account_id, platform_post_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_posts_account_posted_at ON posts(account_id, posted_at DESC);
-CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at);
+CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at DESC);
 
 CREATE TABLE IF NOT EXISTS scrape_logs (
     id TEXT PRIMARY KEY,
@@ -224,50 +223,78 @@ class Database:
         params: List[Any] = []
 
         if account_id:
-            clauses.append("p.account_id = ?")
+            clauses.append("account_id = ?")
             params.append(account_id)
-
-        if platform:
-            clauses.append("a.platform = ?")
-            params.append(platform.lower())
-
-        if username:
+        elif username:
             norm_user = username.lower().strip().lstrip("@")
-            clauses.append("a.username = ?")
-            params.append(norm_user)
+            acc = None
+            if platform:
+                acc = self.get_account_by_username(platform, norm_user)
+            else:
+                for p in ("instagram", "tiktok"):
+                    acc = self.get_account_by_username(p, norm_user)
+                    if acc:
+                        break
+            if not acc:
+                return []
+            clauses.append("account_id = ?")
+            params.append(acc.id)
+        elif platform:
+            norm_plat = platform.lower()
+            all_accs = self.list_accounts()
+            plat_acc_ids = [a.id for a in all_accs if a.platform == norm_plat]
+            if not plat_acc_ids:
+                return []
+            placeholders = ",".join("?" * len(plat_acc_ids))
+            clauses.append(f"account_id IN ({placeholders})")
+            params.extend(plat_acc_ids)
 
         if keyword:
-            clauses.append("p.caption LIKE ?")
+            clauses.append("caption LIKE ?")
             params.append(f"%{keyword}%")
 
         if date_from:
-            clauses.append("p.posted_at >= ?")
+            clauses.append("posted_at >= ?")
             params.append(date_from)
 
         if date_to:
-            clauses.append("p.posted_at <= ?")
+            clauses.append("posted_at <= ?")
             params.append(date_to)
 
         where_clause = "WHERE " + " AND ".join(clauses) if clauses else ""
 
         sql = f"""
             SELECT
-                p.id, p.account_id, a.platform, a.username,
-                p.platform_post_id, p.caption, p.media_url,
-                p.likes, p.comments, p.views,
-                p.posted_at, p.scraped_at
-            FROM posts p
-            JOIN accounts a ON p.account_id = a.id
+                id, account_id, platform_post_id, caption, media_url,
+                likes, comments, views, posted_at, scraped_at
+            FROM posts
             {where_clause}
-            ORDER BY p.posted_at DESC
+            ORDER BY posted_at DESC
             LIMIT ? OFFSET ?
         """
         params.extend([limit, offset])
 
         cursor = self.conn.execute(sql, params)
         rows = cursor.fetchall()
-        return [dict(zip(POST_COLS, r)) for r in rows]
-
+        acc_cache = self._accounts_by_id
+        res = []
+        for r in rows:
+            acc = acc_cache.get(r[1])
+            res.append({
+                "id": r[0],
+                "account_id": r[1],
+                "platform": acc.platform if acc else "",
+                "username": acc.username if acc else "",
+                "platform_post_id": r[2],
+                "caption": r[3],
+                "media_url": r[4],
+                "likes": r[5],
+                "comments": r[6],
+                "views": r[7],
+                "posted_at": r[8],
+                "scraped_at": r[9],
+            })
+        return res
     def get_account_summary(self, account_id: str) -> Optional[Dict[str, Any]]:
         cursor = self.conn.execute(
             """
