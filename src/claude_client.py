@@ -22,6 +22,8 @@ Panduan:
 2. Jelaskan metrik utama seperti total posts, rata-rata likes, views, dan engagement rate.
 3. Berikan rekomendasi taktis (misal: hook pembuka konten, format video Reels/TikTok vs carousel).
 4. Jawab dalam Bahasa Indonesia yang profesional, ramah, dan solutif untuk tim marketing.
+5. Tulis jawaban dalam paragraf atau bullet Markdown yang mengalir natural. JANGAN PERNAH memakai notasi internal/scratchpad seperti "[nama section] -> skipped: alasan" - itu terlihat seperti catatan debug, bukan jawaban untuk manusia.
+6. Kalau ada bagian yang diminta user tapi datanya memang tidak tersedia di database (lihat blok [KETERBATASAN DATA SAAT INI] di bawah kalau ada), sampaikan itu dalam satu-dua kalimat jujur dan natural (bukan notasi teknis), lalu tetap berikan insight terbaik dari data lain yang memang tersedia. Jangan pernah mengarang angka untuk metrik yang tidak tersedia.
 """
 
 SEED_TOPICS = [
@@ -249,22 +251,46 @@ class ClaudeChatHandler:
 
         # Pull real data from database for this topic to inject as factual context
         topic_data = db.get_topic_summary(matched_topic)
-        viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=5)
+        viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=8)
+        ig_summary = db.get_topic_summary(matched_topic, platform="instagram")
+        tt_summary = db.get_topic_summary(matched_topic, platform="tiktok")
+        account_breakdown = db.get_topic_account_breakdown(matched_topic, limit=8)
 
         context_text = f"""
 [DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL]:
 Topik / Kata Kunci: '{matched_topic}'
-Total Postingan Termonitor: {topic_data.get('total_posts', 0)} post
+Total Postingan Termonitor (semua platform): {topic_data.get('total_posts', 0)} post
 Rata-Rata Likes per Post: {topic_data.get('avg_likes', 0):,} likes
 Puncak Likes Tertinggi: {topic_data.get('max_likes', 0):,} likes
 Rata-Rata Views (Video TikTok/Reels): {topic_data.get('avg_views', 0):,} views
 Engagement Rate Rata-Rata: {topic_data.get('engagement_rate', 0)}%
+
+Breakdown per Platform:
+- Instagram: {ig_summary.get('total_posts', 0)} post, rata-rata {ig_summary.get('avg_likes', 0):,} likes
+- TikTok: {tt_summary.get('total_posts', 0)} post, rata-rata {tt_summary.get('avg_likes', 0):,} likes, rata-rata {tt_summary.get('avg_views', 0):,} views
 
 Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user bertanya akun mana atau minta daftar postingan):
 """
         for idx, p in enumerate(viral_posts, 1):
             v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
             context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
+
+        context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
+        if account_breakdown:
+            for idx, a in enumerate(account_breakdown, 1):
+                context_text += (
+                    f"{idx}. @{a['username']} [{a['platform'].upper()}]: {a['post_count']} post, "
+                    f"rata-rata {a['avg_likes']:,} likes, likes tertinggi {a['max_likes']:,}\n"
+                )
+        else:
+            context_text += "(Belum ada akun yang tertangkap scraping untuk topik ini.)\n"
+
+        context_text += """
+[KETERBATASAN DATA SAAT INI]:
+- Reach/impression spesifik untuk Instagram Reels TIDAK tersedia (sistem hanya mencatat likes, comments, views).
+- Follower count dan frekuensi posting per akun TIDAK tersedia (sistem hanya mencatat jumlah post & likes yang tertangkap scraping, bukan profil akun).
+Jangan mengarang angka untuk dua hal di atas jika ditanya user.
+"""
 
         system_instruction = (
             f"{DEFAULT_SYSTEM_PROMPT}\n\n"

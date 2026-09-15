@@ -489,6 +489,37 @@ class Database:
             ],
         }
 
+    def get_topic_account_breakdown(self, keyword: str, platform: Optional[str] = None, limit: int = 8) -> List[Dict[str, Any]]:
+        """Per-account post count & avg likes for accounts posting about this topic, most active first."""
+        clean_kw = keyword.strip().lower()
+        clauses = ["(p.topic = ? OR p.caption LIKE ?)"]
+        params: List[Any] = [clean_kw, f"%{clean_kw}%"]
+        if platform:
+            clauses.append("p.platform = ?")
+            params.append(platform.lower())
+        where_sql = "WHERE " + " AND ".join(clauses)
+        sql = f"""
+            SELECT a.username, a.platform, COUNT(*), COALESCE(AVG(p.likes), 0.0), COALESCE(MAX(p.likes), 0)
+            FROM posts p
+            JOIN accounts a ON a.id = p.account_id
+            {where_sql}
+            GROUP BY p.account_id
+            ORDER BY COUNT(*) DESC, AVG(p.likes) DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        cursor = self.conn.execute(sql, params)
+        return [
+            {
+                "username": r[0],
+                "platform": r[1],
+                "post_count": r[2],
+                "avg_likes": round(r[3], 1),
+                "max_likes": r[4],
+            }
+            for r in cursor.fetchall()
+        ]
+
     def compare_topics(self, keywords: List[str]) -> Dict[str, Any]:
         summaries = [self.get_topic_summary(kw) for kw in keywords if kw.strip()]
         ranked = sorted(summaries, key=lambda s: s.get("avg_likes", 0), reverse=True)
