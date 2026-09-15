@@ -319,11 +319,17 @@ class Database:
         u_get = self._account_usernames.get
         res = []
         for r in rows:
+            u_name = u_get(r[1])
+            if not u_name:
+                acc = self.get_account(r[1])
+                u_name = acc.username if acc else ""
+                if u_name:
+                    self._account_usernames[r[1]] = u_name
             res.append({
                 "id": r[0],
                 "account_id": r[1],
                 "platform": r[2],
-                "username": u_get(r[1], ""),
+                "username": u_name or "easylegal_id",
                 "platform_post_id": r[3],
                 "caption": r[4],
                 "media_url": r[5],
