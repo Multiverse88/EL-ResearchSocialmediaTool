@@ -12,24 +12,96 @@ import instaloader
 from ..models import Account, Post, ScrapeLog, Topic
 from ..db import Database
 from ..ingest import ingest_scraped_batch
+from .apify_client import INSTAGRAM_ACTOR_ID, TIKTOK_ACTOR_ID, is_apify_configured, run_actor_sync
 from .instagram import create_instaloader_instance
-from .tiktok import DEFAULT_USER_AGENT, _extract_sigi_or_hydration_data
+from .tiktok import DEFAULT_USER_AGENT, _apify_item_to_raw_post, _extract_sigi_or_hydration_data
 
 logger = logging.getLogger("scrapers.keyword")
 
 
-def scrape_instagram_hashtag(
+def _get_or_create_account(db: Database, platform: str, username: str, is_own_brand: bool = False) -> Account:
+    """Resolves an existing account or registers a new one for real per-author attribution."""
+    clean_user = (username or "").strip().lstrip("@").lower() or "unknown"
+    acc = db.get_account_by_username(platform, clean_user)
+    if acc:
+        return acc
+    acc = Account.create(platform=platform, username=clean_user, is_own_brand=is_own_brand)
+    return db.upsert_account(acc)
+
+
+def _scrape_instagram_hashtag_apify(
     db: Database,
     keyword_or_hashtag: str,
-    max_posts: int = 25,
+    max_posts: int,
 ) -> Tuple[int, Optional[str]]:
     """
-    Scrapes Instagram content by hashtag / topic keyword.
+    Scrapes Instagram content by hashtag via Apify `apify/instagram-scraper`.
+    Attributes each post to its real author account (not a lumped placeholder),
+    since Apify returns `ownerUsername` per post.
     """
     clean_tag = re.sub(r"[^a-zA-Z0-9_]", "", keyword_or_hashtag).lower()
-    logger.info(f"Starting Instagram hashtag scrape for #{clean_tag} (limit={max_posts})")
+    logger.info(f"Starting Instagram hashtag scrape (Apify) for #{clean_tag} (limit={max_posts})")
 
-    # Get or create a virtual topic account for foreign posts
+    try:
+        items = run_actor_sync(
+            INSTAGRAM_ACTOR_ID,
+            {
+                "search": clean_tag,
+                "searchType": "hashtag",
+                "resultsType": "posts",
+                "searchLimit": 1,
+                "resultsLimit": max_posts,
+            },
+        )
+
+        norm_posts: List[Post] = []
+        for item in items:
+            if item.get("error") or not (item.get("shortCode") or item.get("id")):
+                continue
+            owner_username = item.get("ownerUsername") or f"tag_{clean_tag}"
+            acc = _get_or_create_account(db, "instagram", owner_username)
+            norm_posts.append(Post.create(
+                account_id=acc.id,
+                platform_post_id=str(item.get("shortCode") or item.get("id")),
+                caption=item.get("caption") or "",
+                media_url=item.get("displayUrl") or "",
+                likes=item.get("likesCount") or 0,
+                comments=item.get("commentsCount") or 0,
+                views=item.get("videoViewCount"),
+                posted_at=item.get("timestamp"),
+                platform="instagram",
+                topic=keyword_or_hashtag.lower().strip(),
+            ))
+
+        if not norm_posts:
+            err_msg = f"Apify Instagram hashtag scraper returned no usable posts for #{clean_tag}"
+            logger.warning(err_msg)
+            db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+            return 0, err_msg
+
+        inserted = db.upsert_posts(norm_posts)
+        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="success"))
+        logger.info(f"Ingested {inserted} Instagram posts (Apify) for topic #{clean_tag}")
+        return inserted, None
+
+    except Exception as exc:
+        err_msg = f"Apify Instagram hashtag #{clean_tag} scrape error: {str(exc)}"
+        logger.warning(err_msg)
+        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+        return 0, err_msg
+
+
+def _scrape_instagram_hashtag_instaloader(
+    db: Database,
+    keyword_or_hashtag: str,
+    max_posts: int,
+) -> Tuple[int, Optional[str]]:
+    """Scrapes Instagram content by hashtag via free anonymous Instaloader (blockable by IP)."""
+    clean_tag = re.sub(r"[^a-zA-Z0-9_]", "", keyword_or_hashtag).lower()
+    logger.info(f"Starting Instagram hashtag scrape (Instaloader) for #{clean_tag} (limit={max_posts})")
+
+    # Lumps all matched posts under one virtual per-tag account (no per-author attribution
+    # available from this free scraping path).
     topic_acc = db.get_account_by_username("instagram", f"tag_{clean_tag}")
     if not topic_acc:
         topic_acc = Account.create(
@@ -90,16 +162,91 @@ def scrape_instagram_hashtag(
         return 0, err_msg
 
 
-def scrape_tiktok_topic(
+def scrape_instagram_hashtag(
     db: Database,
-    keyword_or_tag: str,
+    keyword_or_hashtag: str,
     max_posts: int = 25,
 ) -> Tuple[int, Optional[str]]:
     """
-    Scrapes TikTok content by tag / topic keyword.
+    Scrapes Instagram content by hashtag / topic keyword.
+    Uses Apify (apify/instagram-scraper) when APIFY_API_TOKEN is configured — reliable and
+    attributes each post to its real author. Falls back to free anonymous Instaloader otherwise.
+    """
+    if is_apify_configured():
+        return _scrape_instagram_hashtag_apify(db, keyword_or_hashtag, max_posts)
+    return _scrape_instagram_hashtag_instaloader(db, keyword_or_hashtag, max_posts)
+
+
+def _scrape_tiktok_topic_apify(
+    db: Database,
+    keyword_or_tag: str,
+    max_posts: int,
+) -> Tuple[int, Optional[str]]:
+    """
+    Scrapes TikTok content by hashtag via Apify `clockworks/tiktok-scraper`.
+    Attributes each video to its real author account via `authorMeta.name`.
     """
     clean_tag = re.sub(r"[^a-zA-Z0-9_]", "", keyword_or_tag).lower()
-    logger.info(f"Starting TikTok topic scrape for #{clean_tag} (limit={max_posts})")
+    logger.info(f"Starting TikTok topic scrape (Apify) for #{clean_tag} (limit={max_posts})")
+
+    try:
+        items = run_actor_sync(
+            TIKTOK_ACTOR_ID,
+            {
+                "hashtags": [clean_tag],
+                "maxHashtagVideos": max_posts,
+            },
+        )
+
+        norm_posts: List[Post] = []
+        for item in items:
+            raw = _apify_item_to_raw_post(item)
+            if not raw:
+                continue
+            author_meta = item.get("authorMeta") or {}
+            author_username = author_meta.get("name") or f"tag_{clean_tag}"
+            acc = _get_or_create_account(db, "tiktok", author_username)
+
+            stats = raw["stats"]
+            norm_posts.append(Post.create(
+                account_id=acc.id,
+                platform_post_id=raw["id"],
+                caption=raw["desc"],
+                media_url=raw["video"]["downloadAddr"] or raw["video"]["playAddr"],
+                likes=stats["diggCount"],
+                comments=stats["commentCount"],
+                views=stats["playCount"],
+                posted_at=str(raw["createTime"]),
+                platform="tiktok",
+                topic=keyword_or_tag.lower().strip(),
+            ))
+
+        if not norm_posts:
+            err_msg = f"Apify TikTok hashtag scraper returned no usable videos for #{clean_tag}"
+            logger.warning(err_msg)
+            db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+            return 0, err_msg
+
+        inserted = db.upsert_posts(norm_posts)
+        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="success"))
+        logger.info(f"Ingested {inserted} TikTok videos (Apify) for topic #{clean_tag}")
+        return inserted, None
+
+    except Exception as exc:
+        err_msg = f"Apify TikTok topic #{clean_tag} scrape error: {str(exc)}"
+        logger.warning(err_msg)
+        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+        return 0, err_msg
+
+
+def _scrape_tiktok_topic_html(
+    db: Database,
+    keyword_or_tag: str,
+    max_posts: int,
+) -> Tuple[int, Optional[str]]:
+    """Scrapes TikTok content by tag via free raw HTML parsing (fragile; blockable/captcha-prone)."""
+    clean_tag = re.sub(r"[^a-zA-Z0-9_]", "", keyword_or_tag).lower()
+    logger.info(f"Starting TikTok topic scrape (HTML) for #{clean_tag} (limit={max_posts})")
 
     topic_acc = db.get_account_by_username("tiktok", f"tag_{clean_tag}")
     if not topic_acc:
@@ -166,6 +313,21 @@ def scrape_tiktok_topic(
         logger.warning(err_msg)
         db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
         return 0, err_msg
+
+
+def scrape_tiktok_topic(
+    db: Database,
+    keyword_or_tag: str,
+    max_posts: int = 25,
+) -> Tuple[int, Optional[str]]:
+    """
+    Scrapes TikTok content by tag / topic keyword.
+    Uses Apify (clockworks/tiktok-scraper) when APIFY_API_TOKEN is configured — reliable and
+    attributes each video to its real author. Falls back to free raw HTML parsing otherwise.
+    """
+    if is_apify_configured():
+        return _scrape_tiktok_topic_apify(db, keyword_or_tag, max_posts)
+    return _scrape_tiktok_topic_html(db, keyword_or_tag, max_posts)
 
 
 def scrape_topic_content(

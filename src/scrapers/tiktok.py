@@ -11,6 +11,7 @@ import httpx
 from ..models import Account, Post, ScrapeLog
 from ..db import Database
 from ..ingest import ingest_scraped_batch
+from .apify_client import TIKTOK_ACTOR_ID, is_apify_configured, run_actor_sync
 
 logger = logging.getLogger("scrapers.tiktok")
 
@@ -49,22 +50,92 @@ def _extract_sigi_or_hydration_data(html: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def scrape_tiktok_profile(
+def _apify_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Adapts a clockworks/tiktok-scraper dataset item into ingest.py's expected raw_post shape."""
+    video_id = item.get("id")
+    if not video_id:
+        return None
+    video_meta = item.get("videoMeta") or {}
+    return {
+        "id": str(video_id),
+        "desc": item.get("text") or "",
+        "video": {
+            "downloadAddr": video_meta.get("downloadAddr") or item.get("webVideoUrl") or "",
+            "playAddr": video_meta.get("playAddr") or "",
+        },
+        "stats": {
+            "diggCount": item.get("diggCount") or 0,
+            "commentCount": item.get("commentCount") or 0,
+            "playCount": item.get("playCount") or 0,
+        },
+        "createTime": item.get("createTime") or int(time.time()),
+    }
+
+
+def _scrape_tiktok_profile_apify(
     db: Database,
     account: Account,
-    max_posts: int = 30,
-    delay_between_requests: float = 1.0,
+    max_posts: int,
+) -> Tuple[int, Optional[str]]:
+    """Scrapes a TikTok profile via the Apify `clockworks/tiktok-scraper` actor."""
+    username = account.username.strip().lstrip("@")
+    logger.info(f"Starting TikTok scrape (Apify) for @{username} (limit={max_posts})")
+
+    try:
+        items = run_actor_sync(
+            TIKTOK_ACTOR_ID,
+            {
+                "profiles": [username],
+                "maxProfileVideos": max_posts,
+                "profileScrapeSections": ["videos"],
+                "profileSorting": "Latest",
+            },
+        )
+
+        raw_posts = [p for p in (_apify_item_to_raw_post(item) for item in items) if p is not None]
+
+        if not raw_posts:
+            err_msg = f"Apify TikTok scraper returned no usable videos for @{username} (profile may be private, empty, or not found)"
+            logger.warning(err_msg)
+            db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+            return 0, err_msg
+
+        inserted_count, err = ingest_scraped_batch(
+            db=db,
+            platform="tiktok",
+            account=account,
+            raw_posts=raw_posts,
+        )
+        if err:
+            logger.error(f"Ingestion error for TikTok @{username}: {err}")
+            return 0, err
+
+        logger.info(f"Successfully scraped (Apify) and stored {inserted_count} TikTok videos for @{username}")
+        return inserted_count, None
+
+    except Exception as exc:
+        err_msg = f"Apify TikTok scrape failed for @{username}: {str(exc)}"
+        logger.error(err_msg)
+        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+        return 0, err_msg
+
+
+def _scrape_tiktok_profile_html(
+    db: Database,
+    account: Account,
+    max_posts: int,
+    delay_between_requests: float,
 ) -> Tuple[int, Optional[str]]:
     """
-    Scrapes public videos from a TikTok profile without requiring heavy third-party driver binaries.
-    Uses public SSR profile data, supports ms_token & cookies from env, and logs to scrape_logs.
+    Scrapes public videos from a TikTok profile via raw HTML parsing (free, no external
+    dependency, but fragile — TikTok frequently changes page structure / requires captcha).
     """
     username = account.username.strip().lstrip("@")
-    logger.info(f"Starting TikTok scrape for @{username} (limit={max_posts})")
+    logger.info(f"Starting TikTok scrape (HTML) for @{username} (limit={max_posts})")
 
     url = f"https://www.tiktok.com/@{username}"
     ms_token = os.getenv("TIKTOK_MS_TOKEN")
-    
+
     headers = {
         "User-Agent": os.getenv("TIKTOK_USER_AGENT", DEFAULT_USER_AGENT),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -98,21 +169,17 @@ def scrape_tiktok_profile(
 
             data = _extract_sigi_or_hydration_data(resp.text)
             if not data:
-                # If extraction fails, log warning
                 err_msg = f"Could not extract video data from TikTok profile HTML for @{username} (page structure updated or captcha required)"
                 logger.warning(err_msg)
                 db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
                 return 0, err_msg
 
-            # Parse itemModule or itemList from extracted state
             item_module = data.get("ItemModule", {})
             if not item_module:
-                # Look inside __DEFAULT_SCOPE__ -> webapp.user-detail
                 default_scope = data.get("__DEFAULT_SCOPE__", {})
                 user_detail = default_scope.get("webapp.user-detail", {})
                 item_module = user_detail.get("itemModule", {})
 
-            # Convert itemModule items to raw_posts
             count = 0
             for item_id, item in item_module.items():
                 if count >= max_posts:
@@ -156,3 +223,20 @@ def scrape_tiktok_profile(
         logger.error(err_msg)
         db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
         return 0, err_msg
+
+
+def scrape_tiktok_profile(
+    db: Database,
+    account: Account,
+    max_posts: int = 30,
+    delay_between_requests: float = 1.0,
+) -> Tuple[int, Optional[str]]:
+    """
+    Scrapes public videos from a TikTok profile and saves them to the database.
+    Uses Apify (clockworks/tiktok-scraper) when APIFY_API_TOKEN is configured — reliable,
+    handles TikTok's anti-bot measures on Apify's own infrastructure.
+    Falls back to free raw HTML parsing otherwise (fragile, breaks when TikTok changes markup).
+    """
+    if is_apify_configured():
+        return _scrape_tiktok_profile_apify(db, account, max_posts)
+    return _scrape_tiktok_profile_html(db, account, max_posts, delay_between_requests)

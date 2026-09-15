@@ -9,6 +9,7 @@ import instaloader
 from ..models import Account, Post, ScrapeLog
 from ..db import Database
 from ..ingest import ingest_scraped_batch
+from .apify_client import INSTAGRAM_ACTOR_ID, is_apify_configured, run_actor_sync
 
 logger = logging.getLogger("scrapers.instagram")
 
@@ -47,30 +48,87 @@ def create_instaloader_instance() -> instaloader.Instaloader:
     return L
 
 
-def scrape_instagram_profile(
+def _scrape_instagram_profile_apify(
     db: Database,
     account: Account,
-    max_posts: int = 30,
-    delay_between_requests: float = 1.0,
+    max_posts: int,
 ) -> Tuple[int, Optional[str]]:
-    """
-    Scrapes public posts from an Instagram profile and saves them to the database.
-    Handles rate-limits with retries and logs outcome to scrape_logs.
-    """
+    """Scrapes an Instagram profile via the Apify `apify/instagram-scraper` actor."""
     username = account.username.strip().lstrip("@")
-    logger.info(f"Starting Instagram scrape for @{username} (limit={max_posts})")
-    
+    logger.info(f"Starting Instagram scrape (Apify) for @{username} (limit={max_posts})")
+
+    try:
+        items = run_actor_sync(
+            INSTAGRAM_ACTOR_ID,
+            {
+                "directUrls": [f"https://www.instagram.com/{username}/"],
+                "resultsType": "posts",
+                "resultsLimit": max_posts,
+            },
+        )
+
+        raw_posts: List[Dict[str, Any]] = []
+        for item in items:
+            if item.get("error") or not (item.get("shortCode") or item.get("id")):
+                continue
+            raw_posts.append({
+                "shortcode": item.get("shortCode") or item.get("id"),
+                "id": str(item.get("id") or item.get("shortCode")),
+                "caption": item.get("caption") or "",
+                "display_url": item.get("displayUrl") or "",
+                "likes": item.get("likesCount") or 0,
+                "comments": item.get("commentsCount") or 0,
+                "video_view_count": item.get("videoViewCount"),
+                "date_utc": item.get("timestamp"),
+            })
+
+        if not raw_posts:
+            err_msg = f"Apify Instagram scraper returned no usable posts for @{username} (profile may be private, empty, or not found)"
+            logger.warning(err_msg)
+            db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+            return 0, err_msg
+
+        inserted_count, err = ingest_scraped_batch(
+            db=db,
+            platform="instagram",
+            account=account,
+            raw_posts=raw_posts,
+        )
+        if err:
+            logger.error(f"Ingestion error for @{username}: {err}")
+            return 0, err
+
+        logger.info(f"Successfully scraped (Apify) and stored {inserted_count} posts for @{username}")
+        return inserted_count, None
+
+    except Exception as exc:
+        err_msg = f"Apify Instagram scrape failed for @{username}: {str(exc)}"
+        logger.error(err_msg)
+        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+        return 0, err_msg
+
+
+def _scrape_instagram_profile_instaloader(
+    db: Database,
+    account: Account,
+    max_posts: int,
+    delay_between_requests: float,
+) -> Tuple[int, Optional[str]]:
+    """Scrapes an Instagram profile via Instaloader (free, anonymous by default; blockable by IP)."""
+    username = account.username.strip().lstrip("@")
+    logger.info(f"Starting Instagram scrape (Instaloader) for @{username} (limit={max_posts})")
+
     L = create_instaloader_instance()
     raw_posts: List[Dict[str, Any]] = []
 
     try:
         profile = instaloader.Profile.from_username(L.context, username)
-        
+
         count = 0
         for post in profile.get_posts():
             if count >= max_posts:
                 break
-            
+
             raw_post = {
                 "shortcode": post.shortcode,
                 "id": str(post.mediaid),
@@ -118,3 +176,20 @@ def scrape_instagram_profile(
         logger.error(err_msg)
         db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
         return 0, err_msg
+
+
+def scrape_instagram_profile(
+    db: Database,
+    account: Account,
+    max_posts: int = 30,
+    delay_between_requests: float = 1.0,
+) -> Tuple[int, Optional[str]]:
+    """
+    Scrapes public posts from an Instagram profile and saves them to the database.
+    Uses Apify (apify/instagram-scraper) when APIFY_API_TOKEN is configured — reliable,
+    runs on Apify's own residential proxies, not blockable from this VPS's IP.
+    Falls back to free anonymous Instaloader scraping otherwise.
+    """
+    if is_apify_configured():
+        return _scrape_instagram_profile_apify(db, account, max_posts)
+    return _scrape_instagram_profile_instaloader(db, account, max_posts, delay_between_requests)
