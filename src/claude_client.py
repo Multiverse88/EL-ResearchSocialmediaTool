@@ -112,17 +112,27 @@ class ClaudeChatHandler:
             if t in msg_lower:
                 matched_topic = t
                 break
+        # Look back in history if this is a follow-up query like "coba buat list nya" or "di akun mana saja"
+        if not matched_topic and history:
+            for past_msg in reversed(history):
+                past_content = str(past_msg.get("content", "")).lower()
+                for t in KNOWN_TOPICS:
+                    if t in past_content:
+                        matched_topic = t
+                        break
+                if matched_topic:
+                    break
 
         if not matched_topic:
             words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
             matched_topic = words[0] if words else "pendirian PT"
 
-        # Pull real data from database for this topic
+        # Pull real data from database for this topic to inject as factual context
         topic_data = db.get_topic_summary(matched_topic)
-        viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=3)
+        viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=5)
 
         context_text = f"""
-[DATA RIIL HASIL SCRAPING MEDIA SOSIAL]:
+[DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL]:
 Topik / Kata Kunci: '{matched_topic}'
 Total Postingan Termonitor: {topic_data.get('total_posts', 0)} post
 Rata-Rata Likes per Post: {topic_data.get('avg_likes', 0):,} likes
@@ -130,22 +140,24 @@ Puncak Likes Tertinggi: {topic_data.get('max_likes', 0):,} likes
 Rata-Rata Views (Video TikTok/Reels): {topic_data.get('avg_views', 0):,} views
 Engagement Rate Rata-Rata: {topic_data.get('engagement_rate', 0)}%
 
-Referensi Postingan Paling Viral di Database:
+Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user bertanya akun mana atau minta daftar postingan):
 """
-        for p in viral_posts:
+        for idx, p in enumerate(viral_posts, 1):
             v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
-            context_text += f"- [{p['platform'].upper()}] @{p['username']}: \"{p['caption'][:120]}...\" ({p['likes']:,} likes, {v_txt})\n"
+            context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
 
         system_instruction = (
             f"{DEFAULT_SYSTEM_PROMPT}\n\n"
-            f"Berikut data hasil scraping terkini yang relevan dengan pertanyaan user:\n"
+            f"Berikut data hasil scraping terkini yang relevan dengan topik '{matched_topic}':\n"
             f"{context_text}\n"
-            f"Gunakan data di atas untuk menjawab pertanyaan tim marketing secara faktual, mendalam, dan sertakan ide/rekomendasi taktis."
+            f"Gunakan data faktual di atas untuk menjawab pertanyaan tim marketing secara mendalam, lengkap, dan sertakan insight atau ide taktis."
         )
 
-        endpoint_url = self.base_url or os.getenv("OPENAI_API_BASE_URL") or "https://router9-9router-bba7ab-157-10-252-77.sslip.io/v1"
-        if not endpoint_url.endswith("/chat/completions"):
-            endpoint_url = endpoint_url.rstrip("/") + "/chat/completions"
+        # Format 9router endpoint URL (ensure /v1/chat/completions)
+        base = (self.base_url or os.getenv("OPENAI_API_BASE_URL") or "https://router9-9router-bba7ab-157-10-252-77.sslip.io").rstrip("/")
+        if not base.endswith("/v1"):
+            base += "/v1"
+        endpoint_url = f"{base}/chat/completions"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -153,40 +165,59 @@ Referensi Postingan Paling Viral di Database:
         }
 
         target_model = self.model
-        if not target_model or target_model.lower() in ("vision", "claude-3-5-sonnet-20241022"):
+        if not target_model or target_model.lower() in ("vision", "claude-3-5-sonnet-20241022", "default"):
             target_model = "Thinking"
+
+        # Include conversation history so follow-up questions work
+        messages = [{"role": "system", "content": system_instruction}]
+        for m in history:
+            role = m.get("role")
+            content = m.get("content")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": str(content)})
+        messages.append({"role": "user", "content": user_message})
 
         payload = {
             "model": target_model,
-            "stream": False,
-            "messages": [
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": user_message},
-            ],
+            "stream": True,
+            "messages": messages,
         }
 
-        with httpx.Client(timeout=45.0) as client:
-            resp = client.post(endpoint_url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                resp_json = resp.json()
-                choices = resp_json.get("choices", [])
-                reply_text = ""
-                if choices:
-                    reply_text = choices[0].get("message", {}).get("content", "")
+        full_content = ""
+        reasoning = ""
+        with httpx.Client(timeout=60.0) as client:
+            with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
+                if resp.status_code != 200:
+                    raise RuntimeError(f"9router HTTP {resp.status_code}")
+                for line in resp.iter_lines():
+                    if line.startswith("data: "):
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                if "content" in delta and delta["content"]:
+                                    full_content += delta["content"]
+                                if "reasoning_content" in delta and delta["reasoning_content"]:
+                                    reasoning += delta["reasoning_content"]
+                        except Exception:
+                            pass
 
-                if not reply_text:
-                    return self._local_fallback_handler(db, user_message)
+        final_reply = full_content.strip() or reasoning.strip()
+        if not final_reply:
+            return self._local_fallback_handler(db, user_message)
 
-                return {
-                    "status": "success",
-                    "user_query": user_message,
-                    "model": target_model,
-                    "tool_used": "research_topic",
-                    "tool_results": [{"tool": "research_topic", "topic": matched_topic, "data": topic_data}],
-                    "reply": reply_text,
-                }
-            else:
-                raise RuntimeError(f"9router HTTP {resp.status_code}: {resp.text}")
+        return {
+            "status": "success",
+            "user_query": user_message,
+            "model": target_model,
+            "tool_used": "research_topic",
+            "tool_results": [{"tool": "research_topic", "topic": matched_topic, "data": topic_data}],
+            "reply": final_reply,
+        }
 
     def _claude_tool_use_loop(
         self,
