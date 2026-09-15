@@ -201,13 +201,16 @@ class ClaudeChatHandler:
             tool_res = execute_claude_tool(db, "find_viral_content", {"keyword": kw, "limit": 3})
             posts = tool_res.get("viral_posts", [])
             if posts:
-                post_bullets = "\n".join([
-                    f"- [{p['platform'].upper()}] @{p['username']}: \"{p['caption'][:100]}...\" (👍 {p['likes']:,} likes, 👁️ {p['views']:,} views)"
-                    for p in posts
-                ])
+                post_bullets = []
+                for p in posts:
+                    views_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
+                    post_bullets.append(
+                        f"- [{p['platform'].upper()}] @{p['username']}: \"{p['caption'][:100]}...\" (👍 {p['likes']:,} likes, 👁️ {views_txt})"
+                    )
+                bullet_str = "\n".join(post_bullets)
                 reply = (
                     f"Berikut referensi konten paling viral untuk topik **'{kw}'**:\n\n"
-                    f"{post_bullets}\n\n"
+                    f"{bullet_str}\n\n"
                     f"**Pola Keberhasilan**: Konten yang mendapatkan interaksi tinggi umumnya menggunakan hook masalah nyata (misal: 'Jangan sampai salah izin OSS', 'Biaya bikin PT vs CV') dan menyajikan solusi langkah demi langkah."
                 )
             else:
