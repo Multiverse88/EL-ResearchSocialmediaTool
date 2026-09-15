@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # 1. Backend REST API, Scrapers & OpenAI Adapter for Open WebUI
   api:
@@ -9,7 +7,7 @@ services:
     container_name: easycorp_social_api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-sonnet-20241022}
@@ -30,13 +28,13 @@ services:
       - easycorp_network
 
   # 2. Open WebUI (Open-source Web-based AI Chat Panel)
-  # Marketing team accesses via: http://<vps-ip>:3000
+  # Uses port 3080 to avoid collision with Dokploy dashboard on port 3000
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: easycorp_open_webui
     restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "${WEBUI_PORT:-3080}:8080"
     environment:
       - OPENAI_API_BASE_URL=http://api:8000/v1
       - OPENAI_API_KEY=sk-easycorp-key
