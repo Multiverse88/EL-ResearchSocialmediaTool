@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -8,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -84,6 +85,7 @@ class ChatRequest(BaseModel):
     message: Optional[str] = None
     messages: Optional[List[Dict[str, Any]]] = None
     model: Optional[str] = None
+    stream: Optional[bool] = None
 
 
 class ScrapeRunRequest(BaseModel):
@@ -341,6 +343,8 @@ def list_openai_models():
 def openai_compatible_chat(payload: ChatRequest):
     """
     OpenAI-compatible endpoint for Open WebUI, LibreChat, and standard AI webchat clients.
+    Streams live SSE chunks (content + reasoning) by default so Open WebUI renders the
+    typing/thinking animation; pass stream=false for a single buffered JSON response.
     """
     user_msg = payload.message
     if not user_msg and payload.messages:
@@ -352,34 +356,68 @@ def openai_compatible_chat(payload: ChatRequest):
     if not user_msg:
         user_msg = "Halo"
 
-    result = get_claude_handler().process_chat(
-        db=get_db(),
-        message=str(user_msg),
-        conversation_history=payload.messages[:-1] if payload.messages else None,
-    )
+    history = payload.messages[:-1] if payload.messages else None
+    model_name = payload.model or "social-media-claude-agent"
+    db_inst = get_db()
+    handler = get_claude_handler()
 
-    reply_content = result.get("reply", "")
-    return {
-        "id": f"chatcmpl-{int(time.time())}",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": payload.model or "social-media-claude-agent",
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": reply_content,
-                },
-                "finish_reason": "stop",
+    if payload.stream is False:
+        result = handler.process_chat(db=db_inst, message=str(user_msg), conversation_history=history)
+        reply_content = result.get("reply", "")
+        return {
+            "id": f"chatcmpl-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model_name,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": reply_content,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": len(str(user_msg)) // 4,
+                "completion_tokens": len(reply_content) // 4,
+                "total_tokens": (len(str(user_msg)) + len(reply_content)) // 4,
+            },
+        }
+
+    def _sse_generator():
+        chat_id = f"chatcmpl-{int(time.time())}"
+        created = int(time.time())
+
+        def _chunk(delta: Dict[str, Any], finish_reason: Optional[str] = None) -> str:
+            payload_obj = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model_name,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
             }
-        ],
-        "usage": {
-            "prompt_tokens": len(str(user_msg)) // 4,
-            "completion_tokens": len(reply_content) // 4,
-            "total_tokens": (len(str(user_msg)) + len(reply_content)) // 4,
-        },
-    }
+            return f"data: {json.dumps(payload_obj, ensure_ascii=False)}\n\n"
+
+        yield _chunk({"role": "assistant"})
+        try:
+            for piece in handler.stream_chat(db=db_inst, message=str(user_msg), conversation_history=history):
+                text = piece.get("text", "")
+                if not text:
+                    continue
+                if piece.get("type") == "reasoning":
+                    yield _chunk({"reasoning_content": text})
+                else:
+                    yield _chunk({"content": text})
+        except Exception as exc:
+            logger.error(f"Streaming error: {exc}")
+            yield _chunk({"content": f"Terjadi kesalahan saat memproses permintaan: {exc}"})
+
+        yield _chunk({}, finish_reason="stop")
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_sse_generator(), media_type="text/event-stream")
 
 @app.post("/api/seed-sample-data")
 def seed_sample_data(posts_per_account: int = Query(25, ge=5, le=100)):

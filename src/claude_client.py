@@ -99,13 +99,57 @@ class ClaudeChatHandler:
 
         return self._local_fallback_handler(db, message)
 
-    def _call_openai_router(
+    def stream_chat(
+        self,
+        db: Database,
+        message: str,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+    ):
+        """
+        Generator version of process_chat for live streaming (typing/thinking animation).
+        Yields {"type": "reasoning"|"content", "text": str} chunks as they become available.
+        Falls back to a single content chunk when streaming isn't possible.
+        """
+        history = conversation_history or []
+
+        if not message or not message.strip():
+            yield {"type": "content", "text": "Pesan chat tidak boleh kosong"}
+            return
+
+        if not self.api_key:
+            fallback = self._local_fallback_handler(db, message)
+            yield {"type": "content", "text": fallback.get("reply", "")}
+            return
+
+        is_openai_router = (
+            not self.api_key.startswith("sk-ant-")
+            or (self.base_url and "anthropic.com" not in self.base_url)
+        )
+
+        if is_openai_router:
+            yield from self.stream_router_chat(db, message, history)
+            return
+
+        if self.client:
+            try:
+                result = self._claude_tool_use_loop(db, message, history)
+                yield {"type": "content", "text": result.get("reply", "")}
+            except Exception as exc:
+                logger.error(f"Error calling Claude API: {exc}. Falling back to local handler.")
+                fallback = self._local_fallback_handler(db, message)
+                yield {"type": "content", "text": fallback.get("reply", "")}
+            return
+
+        fallback = self._local_fallback_handler(db, message)
+        yield {"type": "content", "text": fallback.get("reply", "")}
+
+    def _build_router_context(
         self,
         db: Database,
         user_message: str,
         history: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """Calls 9router / OpenAI-compatible endpoint with enriched database context."""
+    ):
+        """Resolves topic, pulls factual DB context, and builds the router request payload."""
         msg_lower = user_message.lower()
         matched_topic = None
         for t in KNOWN_TOPICS:
@@ -177,6 +221,18 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
                 messages.append({"role": role, "content": str(content)})
         messages.append({"role": "user", "content": user_message})
 
+        return endpoint_url, headers, target_model, messages, matched_topic, topic_data
+
+    def _call_openai_router(
+        self,
+        db: Database,
+        user_message: str,
+        history: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Calls 9router / OpenAI-compatible endpoint with enriched database context (buffered, non-streaming)."""
+        endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
+            db, user_message, history
+        )
         payload = {
             "model": target_model,
             "stream": True,
@@ -218,6 +274,58 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
             "tool_results": [{"tool": "research_topic", "topic": matched_topic, "data": topic_data}],
             "reply": final_reply,
         }
+
+    def stream_router_chat(self, db: Database, user_message: str, history: List[Dict[str, Any]]):
+        """
+        Generator that relays live SSE chunks from 9router as they arrive, so the client
+        (Open WebUI) can render the typing/thinking animation in real time.
+        Yields dicts: {"type": "reasoning"|"content", "text": str} or {"type": "error", "text": str}.
+        """
+        endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
+            db, user_message, history
+        )
+        payload = {
+            "model": target_model,
+            "stream": True,
+            "messages": messages,
+        }
+
+        got_any_output = False
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"9router HTTP {resp.status_code}")
+                    for line in resp.iter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except Exception:
+                            continue
+                        choices = chunk.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        if delta.get("reasoning_content"):
+                            got_any_output = True
+                            yield {"type": "reasoning", "text": delta["reasoning_content"]}
+                        if delta.get("content"):
+                            got_any_output = True
+                            yield {"type": "content", "text": delta["content"]}
+        except Exception as exc:
+            logger.error(f"Error streaming from 9router: {exc}")
+            fallback = self._local_fallback_handler(db, user_message)
+            yield {"type": "content", "text": fallback.get("reply", "")}
+            return
+
+        if not got_any_output:
+            fallback = self._local_fallback_handler(db, user_message)
+            yield {"type": "content", "text": fallback.get("reply", "")}
+
 
     def _claude_tool_use_loop(
         self,

@@ -93,14 +93,24 @@ class TestServerE2E(unittest.TestCase):
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn("social-media-claude-agent", model_ids)
 
-        # 2. Open WebUI Chat Completion endpoint
+        # 2. Open WebUI Chat Completion endpoint - default streaming (SSE) for typing animation
         payload = {
             "model": "social-media-claude-agent",
             "messages": [
                 {"role": "user", "content": "Tampilkan performa engagement easylegal_id"}
             ]
         }
-        res_chat = self.client.post("/v1/chat/completions", json=payload)
+        res_stream = self.client.post("/v1/chat/completions", json=payload)
+        self.assertEqual(res_stream.status_code, 200)
+        self.assertIn("text/event-stream", res_stream.headers.get("content-type", ""))
+        body = res_stream.text
+        self.assertIn("data: ", body)
+        self.assertIn("[DONE]", body)
+        self.assertIn('"chat.completion.chunk"', body)
+
+        # 3. Explicit stream=false returns the classic buffered JSON contract
+        payload_no_stream = {**payload, "stream": False}
+        res_chat = self.client.post("/v1/chat/completions", json=payload_no_stream)
         self.assertEqual(res_chat.status_code, 200)
         chat_data = res_chat.json()
         self.assertEqual(chat_data["object"], "chat.completion")
