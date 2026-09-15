@@ -86,8 +86,14 @@ class Database:
 
     def _init_schema(self) -> None:
         with self.conn:
+            try:
+                cursor = self.conn.execute("PRAGMA table_info(posts)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if cols and "topic" not in cols:
+                    self.conn.execute("ALTER TABLE posts ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
+            except Exception:
+                pass
             self.conn.executescript(SCHEMA_SQL)
-
     def close(self) -> None:
         self.conn.close()
 
