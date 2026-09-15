@@ -303,31 +303,22 @@ def openai_compatible_chat(payload: ChatRequest):
     }
 
 @app.post("/api/seed-sample-data")
-def seed_sample_data(posts_per_account: int = Query(30, ge=5, le=100)):
+def seed_sample_data(posts_per_account: int = Query(25, ge=5, le=100)):
     """
     Populates realistic marketing sample posts for EasyLegal, EasyTax, EasyOffice,
     and competitor accounts for instant testing and AI chat analysis.
     """
-    from bench import generate_synthetic_dataset
-    from .ingest import ingest_scraped_batch
+    from .sample_data import seed_marketing_sample_data
 
     current_db = get_db()
-    accounts, account_posts = generate_synthetic_dataset(num_posts_per_account=posts_per_account)
-    total_ingested = 0
-
-    for acc in accounts:
-        current_db.upsert_account(acc)
-        raw_list = account_posts[acc.id]
-        inserted, _ = ingest_scraped_batch(current_db, acc.platform, acc, raw_list)
-        total_ingested += inserted
+    acc_count, posts_count = seed_marketing_sample_data(current_db, posts_per_account=posts_per_account)
 
     return {
         "status": "success",
-        "message": f"Berhasil menambahkan {total_ingested} postingan sample riset untuk {len(accounts)} akun.",
-        "accounts_count": len(accounts),
-        "posts_count": total_ingested,
+        "message": f"Berhasil menambahkan {posts_count} postingan sample riset untuk {acc_count} akun.",
+        "accounts_count": acc_count,
+        "posts_count": posts_count,
     }
-
 
 
 @app.post("/scrape/run")
