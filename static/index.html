@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EasyCorp - Social Media Intelligence & AI Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar / Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">EC</div>
+        <div>
+          <h1 class="brand-title">EasyCorp Social Media Intel</h1>
+          <p class="brand-subtitle">Automated Scraper & AI Chat Assistant</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a href="http://localhost:3000" target="_blank" class="btn btn-secondary open-webui-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          Buka di Open WebUI
+        </a>
+        <button id="trigger-scrape-btn" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+          Scrape Sekarang
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="chat-tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        AI Chat Assistant
+      </button>
+      <button class="nav-tab" data-tab="accounts-tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Akun Dimonitor (<span id="account-count">0</span>)
+      </button>
+      <button class="nav-tab" data-tab="posts-tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+        Data Postingan (<span id="post-count">0</span>)
+      </button>
+      <button class="nav-tab" data-tab="logs-tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        Scrape Logs
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="content-container">
+
+      <!-- TAB 1: AI Chat Panel -->
+      <section id="chat-tab" class="tab-pane active">
+        <div class="chat-layout">
+          <div class="chat-main">
+            <div class="chat-messages" id="chat-messages">
+              <div class="message assistant-message">
+                <div class="message-avatar">AI</div>
+                <div class="message-content">
+                  <p>Halo tim marketing! Saya asisten AI untuk memantau performa Instagram & TikTok EasyCorp dan kompetitor. Anda bisa menanyakan apapun terkait data postingan atau ringkasan performa akun.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Suggestion Prompts -->
+            <div class="chat-prompts">
+              <span class="prompts-label">Contoh pertanyaan:</span>
+              <button class="prompt-chip" data-query="berapa engagement rata-rata akun easylegal_id bulan ini?">Engagement EasyLegal</button>
+              <button class="prompt-chip" data-query="bandingkan performa akun easylegal_id vs legalku_official">Bandingkan vs Kompetitor</button>
+              <button class="prompt-chip" data-query="cari postingan tentang perizinan usaha dan PT">Cari Post PT/OSS</button>
+            </div>
+
+            <!-- Chat Input Form -->
+            <form id="chat-form" class="chat-input-area">
+              <input type="text" id="chat-input" placeholder="Tanyakan seputar performa akun, likes, views, atau konten kompetitor..." autocomplete="off" />
+              <button type="submit" id="chat-submit-btn" class="btn btn-primary">
+                Kirim
+              </button>
+            </form>
+          </div>
+
+          <!-- Chat Inspector Panel -->
+          <div class="chat-sidebar">
+            <div class="panel-card">
+              <h3 class="card-title">Tools & Integrasi Open WebUI</h3>
+              <p class="card-desc">AI menggunakan 3 tool utama untuk membaca data dari Postgres/SQLite secara real-time:</p>
+              <ul class="tool-list">
+                <li><code>search_scraped_posts</code> — Filter konten & kata kunci</li>
+                <li><code>get_engagement_summary</code> — Rata-rata likes/views & ER</li>
+                <li><code>compare_accounts</code> — Leaderboard brand vs kompetitor</li>
+              </ul>
+              <div class="openwebui-info-box">
+                <h4>Integrasi Open WebUI</h4>
+                <p>Open WebUI sudah terhubung via <code>/v1/chat/completions</code> di stack Docker. Tim marketing dapat membuka interface penuh Open WebUI di port 3000.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Monitored Accounts -->
+      <section id="accounts-tab" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Akun Sosial Media yang Dimonitor</h2>
+            <p>Daftar akun Instagram & TikTok milik EasyCorp dan kompetitor untuk scraping terjadwal.</p>
+          </div>
+          <button id="add-account-toggle-btn" class="btn btn-primary">+ Tambah Akun</button>
+        </div>
+
+        <!-- Add Account Card (Hidden by default) -->
+        <div id="add-account-card" class="panel-card" style="display: none; margin-bottom: 24px;">
+          <h3 class="card-title">Daftarkan Akun Baru</h3>
+          <form id="add-account-form" class="form-grid">
+            <div class="form-group">
+              <label>Platform</label>
+              <select id="acc-platform" required>
+                <option value="instagram">Instagram</option>
+                <option value="tiktok">TikTok</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Username (tanpa @)</label>
+              <input type="text" id="acc-username" placeholder="misal: easylegal_id" required />
+            </div>
+            <div class="form-group">
+              <label>Kategori</label>
+              <select id="acc-own-brand">
+                <option value="true">Brand Sendiri (EasyCorp)</option>
+                <option value="false">Kompetitor</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Simpan Akun</button>
+              <button type="button" id="cancel-add-account-btn" class="btn btn-secondary">Batal</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Accounts Table -->
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Username</th>
+                <th>Tipe</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="accounts-table-body">
+              <tr><td colspan="4" class="text-center">Memuat akun...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 3: Posts & Engagement Data -->
+      <section id="posts-tab" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Data Postingan Terkumpul</h2>
+            <p>Data hasil scraping Instagram & TikTok yang tersimpan di database.</p>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-bar">
+          <input type="text" id="post-search-keyword" placeholder="Cari keyword caption..." />
+          <select id="post-filter-platform">
+            <option value="">Semua Platform</option>
+            <option value="instagram">Instagram</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+          <button id="post-filter-btn" class="btn btn-secondary">Filter</button>
+        </div>
+
+        <!-- Posts Table -->
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Akun</th>
+                <th>Caption</th>
+                <th>Likes</th>
+                <th>Comments</th>
+                <th>Views</th>
+                <th>Tanggal Post</th>
+              </tr>
+            </thead>
+            <tbody id="posts-table-body">
+              <tr><td colspan="7" class="text-center">Memuat postingan...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 4: Scrape Logs -->
+      <section id="logs-tab" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Riwayat Log Scraping</h2>
+            <p>Status eksekusi scraping harian dari Dokploy Scheduled Jobs.</p>
+          </div>
+          <button id="refresh-logs-btn" class="btn btn-secondary">Refresh Log</button>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Waktu Run</th>
+                <th>Platform</th>
+                <th>Status</th>
+                <th>Error Message</th>
+              </tr>
+            </thead>
+            <tbody id="logs-table-body">
+              <tr><td colspan="4" class="text-center">Memuat log...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

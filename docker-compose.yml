@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # 1. Backend REST API, Scrapers & OpenAI Adapter for Open WebUI
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: easycorp_social_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-sonnet-20241022}
+      - DATABASE_PATH=/app/data/social_media.db
+      - INSTAGRAM_USERNAME=${INSTAGRAM_USERNAME:-}
+      - INSTAGRAM_PASSWORD=${INSTAGRAM_PASSWORD:-}
+      - TIKTOK_MS_TOKEN=${TIKTOK_MS_TOKEN:-}
+      - MAX_POSTS_PER_SCRAPE=${MAX_POSTS_PER_SCRAPE:-30}
+    volumes:
+      - app-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - easycorp_network
+
+  # 2. Open WebUI (Open-source Web-based AI Chat Panel)
+  # Marketing team accesses via: http://<vps-ip>:3000
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: easycorp_open_webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://api:8000/v1
+      - OPENAI_API_KEY=sk-easycorp-key
+      - WEBUI_NAME=EasyCorp Social Media AI
+      - DEFAULT_MODELS=social-media-claude-agent
+      - ENABLE_SIGNUP=true
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - easycorp_network
+
+volumes:
+  app-data:
+    name: easycorp_social_app_data
+  open-webui-data:
+    name: easycorp_social_webui_data
+
+networks:
+  easycorp_network:
+    name: easycorp_social_network

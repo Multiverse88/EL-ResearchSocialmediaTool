@@ -69,7 +69,7 @@ SUMMARY_COLS = (
 class Database:
     def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self._accounts_by_id: Dict[str, Account] = {}
         self._accounts_by_plat_user: Dict[Tuple[str, str], Account] = {}
         self._account_usernames: Dict[str, str] = {}
