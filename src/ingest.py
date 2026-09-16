@@ -12,8 +12,11 @@ def _parse_timestamp(val: Any) -> str:
         ts = val if val < 1e11 else val / 1000.0
         return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
     elif isinstance(val, str):
-        if val.endswith("Z"):
-            val = val[:-1] + "+00:00"
+        if len(val) >= 19 and val[10] == "T":
+            if val.endswith("+00:00"):
+                return val
+            if val.endswith("Z"):
+                return val[:-1] + "+00:00"
         try:
             dt = datetime.fromisoformat(val)
             if dt.tzinfo is None:
@@ -24,7 +27,7 @@ def _parse_timestamp(val: Any) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def normalize_instagram_post(raw: Dict[str, Any], account_id: str) -> Post:
+def normalize_instagram_post(raw: Dict[str, Any], account_id: str, scraped_at: Optional[str] = None) -> Post:
     platform_post_id = str(raw.get("shortcode") or raw.get("id") or raw.get("mediaid") or "")
     caption = str(raw.get("caption") or raw.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text", "") or "")
     media_url = str(raw.get("display_url") or raw.get("thumbnail_src") or raw.get("media_url") or "")
@@ -36,7 +39,7 @@ def normalize_instagram_post(raw: Dict[str, Any], account_id: str) -> Post:
 
     posted_at_raw = raw.get("date_utc") or raw.get("taken_at_timestamp") or raw.get("posted_at")
     posted_at = _parse_timestamp(posted_at_raw)
-    scraped_at = datetime.now(timezone.utc).isoformat()
+    scraped_at = scraped_at or datetime.now(timezone.utc).isoformat()
 
     return Post.create(
         account_id=account_id,
@@ -53,7 +56,7 @@ def normalize_instagram_post(raw: Dict[str, Any], account_id: str) -> Post:
     )
 
 
-def normalize_tiktok_post(raw: Dict[str, Any], account_id: str) -> Post:
+def normalize_tiktok_post(raw: Dict[str, Any], account_id: str, scraped_at: Optional[str] = None) -> Post:
     platform_post_id = str(raw.get("id") or raw.get("video_id") or "")
     caption = str(raw.get("desc") or raw.get("caption") or "")
     
@@ -71,7 +74,7 @@ def normalize_tiktok_post(raw: Dict[str, Any], account_id: str) -> Post:
 
     create_time = raw.get("createTime") or raw.get("created_at") or raw.get("posted_at")
     posted_at = _parse_timestamp(create_time)
-    scraped_at = datetime.now(timezone.utc).isoformat()
+    scraped_at = scraped_at or datetime.now(timezone.utc).isoformat()
 
     return Post.create(
         account_id=account_id,
@@ -97,12 +100,13 @@ def ingest_scraped_batch(
     """Normalizes and ingests a batch of raw scraped posts, with automatic scrape logging."""
     platform = platform.lower()
     try:
+        batch_scraped_at = datetime.now(timezone.utc).isoformat()
         norm_posts: List[Post] = []
         for raw in raw_posts:
             if platform == "instagram":
-                post = normalize_instagram_post(raw, account.id)
+                post = normalize_instagram_post(raw, account.id, scraped_at=batch_scraped_at)
             elif platform == "tiktok":
-                post = normalize_tiktok_post(raw, account.id)
+                post = normalize_tiktok_post(raw, account.id, scraped_at=batch_scraped_at)
             else:
                 raise ValueError(f"Unsupported platform: {platform}")
             norm_posts.append(post)
