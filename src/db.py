@@ -82,7 +82,7 @@ class Database:
         self._all_accounts: Optional[List[Account]] = None
         self._account_summaries: Dict[str, Optional[Dict[str, Any]]] = {}
         self._top_posts: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
-        self._query_cache: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+        self._query_cache: Dict[Tuple[Any, ...], Tuple[List[Dict[str, Any]], bool]] = {}
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -275,14 +275,18 @@ class Database:
         limit: int = 50,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        cache_key = (
+        base_key = (
             account_id, platform, username, keyword, topic, order_by,
-            date_from, date_to, limit, offset,
+            date_from, date_to,
         )
-        cached = self._query_cache.get(cache_key)
+        needed = offset + limit
+        cached = self._query_cache.get(base_key)
         if cached is not None:
-            return cached
+            posts_list, is_complete = cached
+            if len(posts_list) >= needed or is_complete:
+                return posts_list[offset:needed]
 
+        fetch_limit = max(needed, 60)
         clauses = []
         params: List[Any] = []
 
@@ -339,9 +343,9 @@ class Database:
             FROM posts
             {where_clause}
             ORDER BY {order_col}
-            LIMIT ? OFFSET ?
+            LIMIT ? OFFSET 0
         """
-        params.extend([limit, offset])
+        params.append(fetch_limit)
 
         cursor = self.conn.execute(sql, params)
         rows = cursor.fetchall()
@@ -369,10 +373,11 @@ class Database:
                 "scraped_at": r[10],
                 "topic": r[11] if len(r) > 11 else "",
             })
+        is_complete = len(res) < fetch_limit
         if len(self._query_cache) >= 512:
             self._query_cache.clear()
-        self._query_cache[cache_key] = res
-        return res
+        self._query_cache[base_key] = (res, is_complete)
+        return res[offset:needed]
 
     def get_account_summary(self, account_id: str) -> Optional[Dict[str, Any]]:
         if account_id in self._account_summaries:
