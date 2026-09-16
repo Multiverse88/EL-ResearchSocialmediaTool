@@ -274,7 +274,7 @@ def scrape_tiktok_profile(
     account: Account,
     max_posts: int = 30,
     delay_between_requests: float = 1.0,
-) -> Tuple[int, Optional[str]]:
+) -> Tuple[int, Optional[str], str]:
     """
     Scrapes public videos from a TikTok profile and saves them to the database.
     Dispatch order:
@@ -283,9 +283,14 @@ def scrape_tiktok_profile(
       2. TikTokApi/Playwright (free, self-hosted headless Chromium) when installed.
       3. Raw HTML parsing (free, no extra dependency, but fragile — breaks when TikTok
          changes page markup).
+    Returns (posts_added, error, backend) — the scraper that actually ran, never assumed
+    from configuration alone.
     """
     if is_apify_configured():
-        return _scrape_tiktok_profile_apify(db, account, max_posts)
+        count, err = _scrape_tiktok_profile_apify(db, account, max_posts)
+        return count, err, "apify"
     if is_tiktokapi_available():
-        return _scrape_tiktok_profile_playwright(db, account, max_posts)
-    return _scrape_tiktok_profile_html(db, account, max_posts, delay_between_requests)
+        count, err = _scrape_tiktok_profile_playwright(db, account, max_posts)
+        return count, err, "playwright"
+    count, err = _scrape_tiktok_profile_html(db, account, max_posts, delay_between_requests)
+    return count, err, "html"

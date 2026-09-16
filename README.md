@@ -17,7 +17,8 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
   - 100% web-based, diakses langsung via browser tanpa install aplikasi desktop.
   - Didukung oleh model Claude API (`claude-3-5-sonnet`) dengan integrasi native **Tool Use**.
   - Auto-discovery model via endpoint `/v1/models` dan `/v1/chat/completions`.
-  - **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 6 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
+- **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 6 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
+- **Chat-to-Apify Action**: chat bisa langsung dipakai untuk mengelola monitoring dan menjalankan scrape via Apify — bukan cuma bertanya. Contoh perintah: *"Cari 20 post terbaru @kompetitor_a"*, *"Mulai monitor @id.easylegal"*, *"Ganti akun EasyLegal jadi @id.easylegal"*, *"Berhenti monitor @legalku"*, *"Bandingkan @id.easylegal dengan @legalku"*. Pesan diterjemahkan lewat parser deterministik untuk perintah eksplisit, dengan AI planner (JSON terstruktur via router) sebagai fallback untuk kalimat yang lebih natural. Lihat `src/chat_actions.py` dan spesifikasi lengkap di `docs/superpowers/specs/2026-09-16-chat-apify-action-orchestrator-design.md`.
 - **Claude API Tools**:
   - `search_scraped_posts`: Pencarian post berdasarkan kata kunci, tanggal, platform, username.
   - `get_engagement_summary`: Perhitungan likes, comments, views rata-rata & engagement rate.
@@ -62,7 +63,10 @@ ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxx
 CLAUDE_MODEL=claude-3-5-sonnet-20241022
 DATABASE_PATH=/app/data/social_media.db
 MAX_POSTS_PER_SCRAPE=30
+APIFY_API_TOKEN=apify_api_xxxxxxx
+CHAT_ACTION_API_KEY=isi-dengan-secret-acak
 ```
+`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Apify Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions` — set nilai yang sama sebagai `OPENAI_API_KEY` service `open-webui` di `docker-compose.yml` supaya hanya instance Open WebUI internal yang bisa menjalankannya.
 
 ### 3. Setting Routing / Domain (Tab Domains)
 - **Open WebUI (Chat Panel)**: Arahkan ke service `open-webui` port `8080`.

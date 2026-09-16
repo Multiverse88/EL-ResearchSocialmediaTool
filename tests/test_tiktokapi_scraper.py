@@ -95,10 +95,12 @@ class TestTikTokApiDispatch(unittest.TestCase):
 
         with patch.object(tt_module, "is_tiktokapi_available", return_value=True), \
              patch.object(tt_module, "fetch_user_videos", return_value=FAKE_TIKTOKAPI_ITEMS) as mock_fetch:
-            count, err = tt_module.scrape_tiktok_profile(self.db, acc, max_posts=10)
+            count, err, backend = tt_module.scrape_tiktok_profile(self.db, acc, max_posts=10)
 
         mock_fetch.assert_called_once()
         self.assertIsNone(err)
+        self.assertEqual(backend, "playwright")
+
         self.assertEqual(count, 1)  # the id-less item is dropped
 
         posts = self.db.query_posts(account_id=acc.id)

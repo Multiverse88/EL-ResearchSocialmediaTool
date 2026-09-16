@@ -13,6 +13,7 @@ class Account:
     username: str
     is_own_brand: bool
     created_at: str
+    monitoring_enabled: bool = True
 
     @classmethod
     def create(
@@ -22,6 +23,7 @@ class Account:
         is_own_brand: bool = False,
         account_id: Optional[str] = None,
         created_at: Optional[str] = None,
+        monitoring_enabled: bool = True,
     ) -> Account:
         return cls(
             id=account_id or str(uuid.uuid4()),
@@ -29,6 +31,7 @@ class Account:
             username=username.lower().strip().lstrip("@"),
             is_own_brand=is_own_brand,
             created_at=created_at or datetime.now(timezone.utc).isoformat(),
+            monitoring_enabled=monitoring_enabled,
         )
 
     def to_dict(self) -> dict:

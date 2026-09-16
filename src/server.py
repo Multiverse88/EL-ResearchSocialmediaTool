@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -65,6 +66,38 @@ def require_api_key(
         provided = authorization[7:].strip()
     if provided != secret:
         raise HTTPException(status_code=401, detail="Missing or invalid API key. Provide X-API-Key header.")
+
+
+# --- Chat-action authorization ---
+# Set CHAT_ACTION_API_KEY in the environment to require `X-API-Key` (or `Authorization:
+# Bearer`) on the chat endpoints. Chat can translate natural-language messages into
+# Apify scrapes and monitoring mutations (see chat_actions.py), so — unlike the
+# zero-config internal-tool default for plain CRUD writes above — this is meant to be
+# set in any deployment reachable by more than the operator's own OpenWebUI instance.
+# Left unset, chat stays open (matches this project's existing zero-config default) but
+# a warning is logged once so the gap is visible in logs.
+CHAT_ACTION_API_KEY = os.getenv("CHAT_ACTION_API_KEY", "").strip()
+if not CHAT_ACTION_API_KEY:
+    logger.warning(
+        "CHAT_ACTION_API_KEY is not set. Chat endpoints (POST /chat, /v1/chat/completions) are "
+        "UNAUTHENTICATED and can trigger Apify scraping/monitoring mutations from any caller. "
+        "Set CHAT_ACTION_API_KEY in Dokploy Environment and configure it as your OpenWebUI "
+        "instance's OPENAI_API_KEY to restrict chat-driven actions to your internal OpenWebUI."
+    )
+
+
+def require_chat_action_key(
+    x_api_key: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+) -> None:
+    secret = os.getenv("CHAT_ACTION_API_KEY", "").strip()
+    if not secret:
+        return
+    provided = x_api_key
+    if not provided and authorization and authorization.lower().startswith("bearer "):
+        provided = authorization[7:].strip()
+    if not provided or not hmac.compare_digest(provided, secret):
+        raise HTTPException(status_code=401, detail="Missing or invalid API key. Provide X-API-Key or Authorization: Bearer header.")
 
 
 # --- Simple in-memory rate limiter for chat endpoints ---
@@ -359,7 +392,7 @@ def scrape_topic_endpoint(payload: ScrapeTopicRequest, background_tasks: Backgro
 
 
 
-@app.post("/chat", dependencies=[Depends(enforce_chat_rate_limit)])
+@app.post("/chat", dependencies=[Depends(enforce_chat_rate_limit), Depends(require_chat_action_key)])
 def chat_endpoint(payload: ChatRequest):
     """
     POST /chat - Endpoint utama chat panel.
@@ -414,7 +447,7 @@ def list_openai_models():
     }
 
 
-@app.post("/v1/chat/completions", dependencies=[Depends(enforce_chat_rate_limit)])
+@app.post("/v1/chat/completions", dependencies=[Depends(enforce_chat_rate_limit), Depends(require_chat_action_key)])
 def openai_compatible_chat(payload: ChatRequest):
     """
     OpenAI-compatible endpoint for Open WebUI, LibreChat, and standard AI webchat clients.

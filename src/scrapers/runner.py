@@ -53,7 +53,8 @@ def run_scraping_job(
     Can be filtered by platform or single username.
     """
     logger.info("=== Starting Social Media Scraping Job ===")
-    accounts = seed_default_accounts_if_empty(db)
+    seed_default_accounts_if_empty(db)
+    accounts = db.list_accounts() if username else db.list_monitored_accounts()
 
     # Filter target accounts if requested
     targets: List[Account] = []
@@ -82,10 +83,11 @@ def run_scraping_job(
 
     for acc in targets:
         logger.info(f"Processing @{acc.username} on {acc.platform} (own_brand={acc.is_own_brand})...")
+        backend = None
         if acc.platform == "instagram":
-            count, err = scrape_instagram_profile(db, acc, max_posts=max_posts_per_account)
+            count, err, backend = scrape_instagram_profile(db, acc, max_posts=max_posts_per_account)
         elif acc.platform == "tiktok":
-            count, err = scrape_tiktok_profile(db, acc, max_posts=max_posts_per_account)
+            count, err, backend = scrape_tiktok_profile(db, acc, max_posts=max_posts_per_account)
         else:
             err = f"Unsupported platform: {acc.platform}"
             count = 0
@@ -97,6 +99,7 @@ def run_scraping_job(
                 "platform": acc.platform,
                 "status": "failed",
                 "posts_added": 0,
+                "backend": backend,
                 "error": err,
             })
         else:
@@ -107,6 +110,7 @@ def run_scraping_job(
                 "platform": acc.platform,
                 "status": "success",
                 "posts_added": count,
+                "backend": backend,
             })
 
     summary = {

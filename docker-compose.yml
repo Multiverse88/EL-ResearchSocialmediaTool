@@ -24,6 +24,7 @@ services:
       - TIKTOK_SESSION_COOKIE=${TIKTOK_SESSION_COOKIE:-}
       - APIFY_API_TOKEN=${APIFY_API_TOKEN:-}
       - API_SECRET_KEY=${API_SECRET_KEY:-}
+      - CHAT_ACTION_API_KEY=${CHAT_ACTION_API_KEY:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - CHAT_RATE_LIMIT_PER_MINUTE=${CHAT_RATE_LIMIT_PER_MINUTE:-20}
       - MAX_POSTS_PER_SCRAPE=${MAX_POSTS_PER_SCRAPE:-30}
@@ -50,7 +51,7 @@ services:
       - "${WEBUI_PORT:-3080}:8080"
     environment:
       - OPENAI_API_BASE_URL=http://api:8000/v1
-      - OPENAI_API_KEY=sk-easycorp-key
+      - OPENAI_API_KEY=${CHAT_ACTION_API_KEY:-sk-easycorp-key}
       - WEBUI_NAME=EasyCorp Social Media AI
       - DEFAULT_MODELS=social-media-claude-agent
       - ENABLE_SIGNUP=true

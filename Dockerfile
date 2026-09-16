@@ -24,6 +24,7 @@ RUN playwright install --with-deps chromium
 COPY src/ /app/src/
 COPY static/ /app/static/
 COPY openwebui_tool.py /app/openwebui_tool.py
+COPY scripts/ /app/scripts/
 
 # Create persistent data directory
 RUN mkdir -p /app/data

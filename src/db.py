@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     username TEXT NOT NULL,
     is_own_brand INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
+    monitoring_enabled INTEGER NOT NULL DEFAULT 1,
     UNIQUE(platform, username)
 );
 
@@ -94,6 +95,13 @@ class Database:
                     self.conn.execute("ALTER TABLE posts ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
             except Exception:
                 pass
+            try:
+                cursor = self.conn.execute("PRAGMA table_info(accounts)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if cols and "monitoring_enabled" not in cols:
+                    self.conn.execute("ALTER TABLE accounts ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 1")
+            except Exception:
+                pass
             self.conn.executescript(SCHEMA_SQL)
     def close(self) -> None:
         self.conn.close()
@@ -103,13 +111,16 @@ class Database:
         with self.conn:
             cursor = self.conn.execute(
                 """
-                INSERT INTO accounts (id, platform, username, is_own_brand, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO accounts (id, platform, username, is_own_brand, created_at, monitoring_enabled)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(platform, username) DO UPDATE SET
                     is_own_brand = excluded.is_own_brand
-                RETURNING id, platform, username, is_own_brand, created_at;
+                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled;
                 """,
-                (account.id, account.platform, account.username, int(account.is_own_brand), account.created_at),
+                (
+                    account.id, account.platform, account.username, int(account.is_own_brand),
+                    account.created_at, int(account.monitoring_enabled),
+                ),
             )
             row = cursor.fetchone()
             saved = Account(
@@ -118,6 +129,7 @@ class Database:
                 username=row[2],
                 is_own_brand=bool(row[3]),
                 created_at=row[4],
+                monitoring_enabled=bool(row[5]),
             )
             self._accounts_by_id[saved.id] = saved
             self._accounts_by_plat_user[(saved.platform, saved.username)] = saved
@@ -129,7 +141,7 @@ class Database:
         if account_id in self._accounts_by_id:
             return self._accounts_by_id[account_id]
         cursor = self.conn.execute(
-            "SELECT id, platform, username, is_own_brand, created_at FROM accounts WHERE id = ?",
+            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts WHERE id = ?",
             (account_id,),
         )
         row = cursor.fetchone()
@@ -141,6 +153,7 @@ class Database:
             username=row[2],
             is_own_brand=bool(row[3]),
             created_at=row[4],
+            monitoring_enabled=bool(row[5]),
         )
         self._accounts_by_id[acc.id] = acc
         self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
@@ -154,7 +167,7 @@ class Database:
         if cache_key in self._accounts_by_plat_user:
             return self._accounts_by_plat_user[cache_key]
         cursor = self.conn.execute(
-            "SELECT id, platform, username, is_own_brand, created_at FROM accounts WHERE platform = ? AND username = ?",
+            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts WHERE platform = ? AND username = ?",
             (norm_plat, norm_user),
         )
         row = cursor.fetchone()
@@ -166,6 +179,7 @@ class Database:
             username=row[2],
             is_own_brand=bool(row[3]),
             created_at=row[4],
+            monitoring_enabled=bool(row[5]),
         )
         self._accounts_by_id[acc.id] = acc
         self._accounts_by_plat_user[cache_key] = acc
@@ -176,7 +190,7 @@ class Database:
         if self._all_accounts is not None:
             return self._all_accounts
         cursor = self.conn.execute(
-            "SELECT id, platform, username, is_own_brand, created_at FROM accounts ORDER BY username ASC"
+            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts ORDER BY username ASC"
         )
         accounts = [
             Account(
@@ -185,6 +199,7 @@ class Database:
                 username=row[2],
                 is_own_brand=bool(row[3]),
                 created_at=row[4],
+                monitoring_enabled=bool(row[5]),
             )
             for row in cursor.fetchall()
         ]
@@ -194,6 +209,10 @@ class Database:
             self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
             self._account_usernames[acc.id] = acc.username
         return accounts
+
+    def list_monitored_accounts(self) -> List[Account]:
+        """Accounts eligible for scheduled scraping (monitoring_enabled=1)."""
+        return [a for a in self.list_accounts() if a.monitoring_enabled]
 
     def search_accounts(self, keyword: str, platform: Optional[str] = None, limit: int = 20) -> List[Account]:
         """Search accounts by username keyword with optional platform filter."""
@@ -205,13 +224,69 @@ class Database:
             params.append(platform.lower())
         where_sql = "WHERE " + " AND ".join(clauses)
         cursor = self.conn.execute(
-            f"SELECT id, platform, username, is_own_brand, created_at FROM accounts {where_sql} ORDER BY username ASC LIMIT ?",
+            f"SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts {where_sql} ORDER BY username ASC LIMIT ?",
             [*params, limit],
         )
         return [
-            Account(id=r[0], platform=r[1], username=r[2], is_own_brand=bool(r[3]), created_at=r[4])
+            Account(id=r[0], platform=r[1], username=r[2], is_own_brand=bool(r[3]), created_at=r[4], monitoring_enabled=bool(r[5]))
             for r in cursor.fetchall()
         ]
+
+    def _invalidate_account_caches(self) -> None:
+        """Full-clear on any account mutation (rename/monitoring toggle): cheap, rare, and
+        avoids leaking stale usernames baked into cached query/summary results."""
+        self._accounts_by_id.clear()
+        self._accounts_by_plat_user.clear()
+        self._account_usernames.clear()
+        self._all_accounts = None
+        self._account_summaries.clear()
+        self._query_cache.clear()
+        self._top_posts.clear()
+
+    def set_account_monitoring(self, account_id: str, enabled: bool) -> Account:
+        """Enables/disables scheduled monitoring for an account without touching its posts."""
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                UPDATE accounts SET monitoring_enabled = ? WHERE id = ?
+                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled;
+                """,
+                (int(enabled), account_id),
+            )
+            row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Account not found: {account_id}")
+        self._invalidate_account_caches()
+        return Account(id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4], monitoring_enabled=bool(row[5]))
+
+    def rename_account_username(self, account_id: str, new_username: str) -> Account:
+        """Renames an account's monitored username in place, preserving its id and post history."""
+        norm_user = new_username.lower().strip().lstrip("@")
+        try:
+            with self.conn:
+                cursor = self.conn.execute(
+                    """
+                    UPDATE accounts SET username = ? WHERE id = ?
+                    RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled;
+                    """,
+                    (norm_user, account_id),
+                )
+                row = cursor.fetchone()
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"Username @{norm_user} is already registered on this platform: {exc}") from exc
+        if not row:
+            raise ValueError(f"Account not found: {account_id}")
+        self._invalidate_account_caches()
+        return Account(id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4], monitoring_enabled=bool(row[5]))
+
+    def get_account_freshness(self, account_id: str) -> Optional[str]:
+        """Returns the most recent `scraped_at` timestamp among this account's posts, or None."""
+        cursor = self.conn.execute(
+            "SELECT MAX(scraped_at) FROM posts WHERE account_id = ?",
+            (account_id,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else None
 
 
     # Posts & Ingestion

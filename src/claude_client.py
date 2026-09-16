@@ -79,40 +79,135 @@ class ClaudeChatHandler:
         Processes a marketing topic research query.
         Uses 9router / OpenAI-compatible gateway or Claude API if key is set,
         otherwise uses local intent matching fallback.
+
+        Before any research/answer path runs, translates the message into typed chat
+        actions (scrape a profile, start/stop monitoring, replace a monitored account,
+        compare profiles) via `chat_actions.ChatActionOrchestrator` and executes them
+        against Apify/the scrapers, so commands like "ganti akun EasyLegal jadi
+        @id.easylegal" actually mutate monitoring and scrape — not just answer as if
+        they were a topic-research question.
         """
         if not message or not message.strip():
             return {"status": "error", "message": "Pesan chat tidak boleh kosong"}
 
-        if not self.api_key:
-            logger.info("No AI API key configured. Running local intent fallback handler.")
-            return self._local_fallback_handler(db, message)
-
-        # Route 1: 9router or OpenAI-compatible router
-        is_openai_router = (
+        history = conversation_history or []
+        is_openai_router = bool(self.api_key) and (
             not self.api_key.startswith("sk-ant-")
             or (self.base_url and "anthropic.com" not in self.base_url)
         )
+        action_result = self._run_chat_actions(db, message, history, is_openai_router)
+        if action_result.clarification:
+            return {
+                "status": "success",
+                "user_query": message,
+                "tool_used": None,
+                "tools_used": [],
+                "tool_results": [],
+                "action_receipts": [],
+                "reply": action_result.clarification,
+            }
 
+        if not self.api_key:
+            logger.info("No AI API key configured. Running local intent fallback handler.")
+            return self._merge_action_context(self._local_fallback_handler(db, message), action_result)
+
+        # Route 1: 9router or OpenAI-compatible router
         if is_openai_router:
             try:
-                return self._call_openai_router(db, message, conversation_history or [])
+                result = self._call_openai_router(db, message, history, action_result=action_result)
+                return self._merge_action_context(result, action_result, already_grounded=True)
             except Exception as exc:
                 logger.error(f"Error calling 9router/OpenAI gateway: {exc}. Falling back to local handler.")
                 fallback = self._local_fallback_handler(db, message)
                 fallback["warning"] = f"AI Router notice: {str(exc)} (Menampilkan hasil dari query database internal)."
-                return fallback
+                return self._merge_action_context(fallback, action_result)
 
         # Route 2: Native Anthropic Claude API
         if self.client:
             try:
-                return self._claude_tool_use_loop(db, message, conversation_history or [])
+                result = self._claude_tool_use_loop(db, message, history, action_result=action_result)
+                return self._merge_action_context(result, action_result, already_grounded=True)
             except Exception as exc:
                 logger.error(f"Error calling Claude API: {exc}. Falling back to local handler.")
                 fallback = self._local_fallback_handler(db, message)
                 fallback["warning"] = f"Claude API notice: {str(exc)} (Menampilkan hasil dari query database internal)."
-                return fallback
+                return self._merge_action_context(fallback, action_result)
 
-        return self._local_fallback_handler(db, message)
+        return self._merge_action_context(self._local_fallback_handler(db, message), action_result)
+
+    def _run_chat_actions(self, db: Database, message: str, history: List[Dict[str, Any]], is_openai_router: bool):
+        """Runs the deterministic parser first, then (only for messages that show some
+        sign of action intent it didn't already resolve) consults the AI planner via the
+        router. Returns an `ActionExecutionResult` — empty when nothing action-like was
+        found, so ordinary research questions are entirely unaffected."""
+        from .chat_actions import ChatActionOrchestrator
+        planner = self._plan_actions_via_router if (is_openai_router and self.api_key) else None
+        return ChatActionOrchestrator().plan_and_execute(db, message, history, planner=planner)
+
+    def _plan_actions_via_router(self, message: str, history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """AI planner: asks the router for a strict JSON action plan (no tool-use loop,
+        one-shot). Only reached for messages the deterministic fast-path parser could not
+        resolve but that still look action-like. Returns None on any failure so the
+        orchestrator silently continues without executing anything."""
+        try:
+            base = (self.base_url or os.getenv("OPENAI_API_BASE_URL") or "").rstrip("/")
+            if not base:
+                return None
+            if not base.endswith("/v1"):
+                base += "/v1"
+            endpoint_url = f"{base}/chat/completions"
+            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+            target_model = self.model
+            if not target_model or target_model.lower() in ("vision", "claude-3-5-sonnet-20241022", "default"):
+                target_model = "Thinking"
+
+            system_prompt = (
+                "Anda adalah action planner untuk sistem riset media sosial. Balas HANYA dengan JSON valid, "
+                "tanpa teks lain, sesuai skema:\n"
+                '{"actions": [...], "analysis_request": "", "needs_clarification": false, "clarification_question": null}\n'
+                "Setiap elemen actions[] adalah salah satu bentuk berikut (field lain akan diabaikan):\n"
+                '{"type":"scrape_profile","platform":"instagram|tiktok","username":"...","max_posts":30,"force_refresh":false}\n'
+                '{"type":"research_topic","keyword":"...","platforms":["instagram","tiktok"],"max_posts_per_platform":30,"force_refresh":false}\n'
+                '{"type":"compare_profiles","targets":[{"platform":"instagram","username":"..."}],"max_posts":30,"force_refresh":false}\n'
+                '{"type":"monitor_account","platform":"instagram|tiktok","username":"...","max_posts":30}\n'
+                '{"type":"replace_monitored_account","platform":"instagram|tiktok","old_username":"...","new_username":"...","max_posts":30}\n'
+                '{"type":"stop_monitoring","platform":"instagram|tiktok","username":"..."}\n'
+                "Jika akun/topik target tidak jelas dari pesan user, kosongkan actions dan set "
+                "needs_clarification=true dengan clarification_question. Jangan pernah mengarang actor Apify, "
+                "URL, SQL, atau instruksi lain di luar skema ini."
+            )
+            messages = [{"role": "system", "content": system_prompt}]
+            for m in history[-6:]:
+                role = m.get("role")
+                content = m.get("content")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": str(content)})
+            messages.append({"role": "user", "content": message})
+
+            payload = {"model": target_model, "stream": False, "messages": messages}
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.post(endpoint_url, headers=headers, json=payload)
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            return json.loads(content)
+        except Exception as exc:
+            logger.warning(f"Chat action planner call failed: {exc}")
+            return None
+
+    def _merge_action_context(self, result: Dict[str, Any], action_result, already_grounded: bool = False) -> Dict[str, Any]:
+        """Attaches action receipts to the response. When the composing path (router/Claude
+        tool-use) already saw the receipts injected into its prompt (`already_grounded`),
+        the model's own reply already references them in natural language, so nothing is
+        prefixed. Otherwise (local fallback templates never see action context) the receipt
+        summary is prefixed as plain status lines so the mutation/scrape isn't silently lost."""
+        result["action_receipts"] = action_result.receipts_as_dicts()
+        if action_result.status_lines and not already_grounded:
+            prefix = "\n".join(f"- {line}" for line in action_result.status_lines)
+            existing_reply = result.get("reply", "")
+            result["reply"] = f"{prefix}\n\n{existing_reply}" if existing_reply else prefix
+        return result
 
     def stream_chat(
         self,
@@ -131,31 +226,38 @@ class ClaudeChatHandler:
             yield {"type": "content", "text": "Pesan chat tidak boleh kosong"}
             return
 
-        if not self.api_key:
-            fallback = self._local_fallback_handler(db, message)
-            yield {"type": "content", "text": fallback.get("reply", "")}
-            return
-
-        is_openai_router = (
+        is_openai_router = bool(self.api_key) and (
             not self.api_key.startswith("sk-ant-")
             or (self.base_url and "anthropic.com" not in self.base_url)
         )
+        action_result = self._run_chat_actions(db, message, history, is_openai_router)
+        if action_result.clarification:
+            yield {"type": "content", "text": action_result.clarification}
+            return
+        if action_result.status_lines:
+            status_text = "\n".join(f"🔧 {line}" for line in action_result.status_lines) + "\n\n"
+            yield {"type": "reasoning", "text": status_text}
+
+        if not self.api_key:
+            fallback = self._merge_action_context(self._local_fallback_handler(db, message), action_result)
+            yield {"type": "content", "text": fallback.get("reply", "")}
+            return
 
         if is_openai_router:
-            yield from self.stream_router_chat(db, message, history)
+            yield from self.stream_router_chat(db, message, history, action_result=action_result)
             return
 
         if self.client:
             try:
-                result = self._claude_tool_use_loop(db, message, history)
+                result = self._claude_tool_use_loop(db, message, history, action_result=action_result)
                 yield {"type": "content", "text": result.get("reply", "")}
             except Exception as exc:
                 logger.error(f"Error calling Claude API: {exc}. Falling back to local handler.")
-                fallback = self._local_fallback_handler(db, message)
+                fallback = self._merge_action_context(self._local_fallback_handler(db, message), action_result)
                 yield {"type": "content", "text": fallback.get("reply", "")}
             return
 
-        fallback = self._local_fallback_handler(db, message)
+        fallback = self._merge_action_context(self._local_fallback_handler(db, message), action_result)
         yield {"type": "content", "text": fallback.get("reply", "")}
 
     def _resolve_matched_topic(
@@ -240,6 +342,7 @@ class ClaudeChatHandler:
         user_message: str,
         history: List[Dict[str, Any]],
         matched_topic: Optional[str] = None,
+        action_context_text: str = "",
     ):
         """
         Resolves topic (unless already provided by the caller), live-scrapes it if stale,
@@ -284,6 +387,9 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
                 )
         else:
             context_text += "(Belum ada akun yang tertangkap scraping untuk topik ini.)\n"
+
+        if action_context_text:
+            context_text += f"\n{action_context_text}"
 
         context_text += """
 [KETERBATASAN DATA SAAT INI]:
@@ -330,10 +436,13 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
         db: Database,
         user_message: str,
         history: List[Dict[str, Any]],
+        action_result=None,
     ) -> Dict[str, Any]:
         """Calls 9router / OpenAI-compatible endpoint with enriched database context (buffered, non-streaming)."""
+        matched_topic = action_result.matched_topic if action_result else None
+        action_context_text = action_result.context_text if action_result else ""
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
-            db, user_message, history
+            db, user_message, history, matched_topic=matched_topic, action_context_text=action_context_text,
         )
         payload = {
             "model": target_model,
@@ -378,19 +487,22 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
             "reply": final_reply,
         }
 
-    def stream_router_chat(self, db: Database, user_message: str, history: List[Dict[str, Any]]):
+    def stream_router_chat(self, db: Database, user_message: str, history: List[Dict[str, Any]], action_result=None):
         """
         Generator that relays live SSE chunks from 9router as they arrive, so the client
         (Open WebUI) can render the typing/thinking animation in real time.
         Yields dicts: {"type": "reasoning"|"content", "text": str} or {"type": "error", "text": str}.
         """
-        matched_topic = self._resolve_matched_topic(db, user_message, history)
-        freshness_status = self._ensure_topic_freshness(db, matched_topic)
-        if freshness_status:
-            yield {"type": "reasoning", "text": freshness_status}
+        matched_topic = action_result.matched_topic if action_result else None
+        action_context_text = action_result.context_text if action_result else ""
+        if matched_topic is None:
+            matched_topic = self._resolve_matched_topic(db, user_message, history)
+            freshness_status = self._ensure_topic_freshness(db, matched_topic)
+            if freshness_status:
+                yield {"type": "reasoning", "text": freshness_status}
 
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
-            db, user_message, history, matched_topic=matched_topic
+            db, user_message, history, matched_topic=matched_topic, action_context_text=action_context_text,
         )
         payload = {
             "model": target_model,
@@ -441,6 +553,7 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
         db: Database,
         user_message: str,
         history: List[Dict[str, Any]],
+        action_result=None,
     ) -> Dict[str, Any]:
         """Multi-turn tool-use loop with Claude API."""
         messages = list(history)
@@ -449,10 +562,14 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
         tools_used = []
         tool_results_data = []
 
+        system_prompt = DEFAULT_SYSTEM_PROMPT
+        if action_result and action_result.context_text:
+            system_prompt = f"{DEFAULT_SYSTEM_PROMPT}\n\n{action_result.context_text}"
+
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1500,
-            system=DEFAULT_SYSTEM_PROMPT,
+            system=system_prompt,
             messages=messages,
             tools=CLAUDE_TOOLS_SPEC,
         )
@@ -486,7 +603,7 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
             final_response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
-                system=DEFAULT_SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=messages,
             )
 

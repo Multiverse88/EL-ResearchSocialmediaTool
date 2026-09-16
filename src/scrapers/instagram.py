@@ -183,17 +183,20 @@ def scrape_instagram_profile(
     account: Account,
     max_posts: int = 30,
     delay_between_requests: float = 1.0,
-) -> Tuple[int, Optional[str]]:
+) -> Tuple[int, Optional[str], str]:
     """
     Scrapes public posts from an Instagram profile and saves them to the database.
     Uses Apify (apify/instagram-scraper) when APIFY_API_TOKEN is configured — reliable,
     runs on Apify's own residential proxies, not blockable from this VPS's IP.
     Falls back to Instaloader (with INSTAGRAM_USERNAME/PASSWORD if set) when Apify
     is unconfigured or fails (e.g. quota exhausted).
+    Returns (posts_added, error, backend) where backend is "apify" or "instaloader" —
+    the scraper that actually produced the result, never assumed from configuration alone.
     """
     if is_apify_configured():
         count, err = _scrape_instagram_profile_apify(db, account, max_posts)
         if not err:
-            return count, None
+            return count, None, "apify"
         logger.warning(f"Apify failed, falling back to Instaloader: {err}")
-    return _scrape_instagram_profile_instaloader(db, account, max_posts, delay_between_requests)
+    count, err = _scrape_instagram_profile_instaloader(db, account, max_posts, delay_between_requests)
+    return count, err, "instaloader"

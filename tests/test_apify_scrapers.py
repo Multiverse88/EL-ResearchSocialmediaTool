@@ -110,10 +110,11 @@ class TestApifyProfileScraping(unittest.TestCase):
         acc = self.db.upsert_account(Account.create(platform="instagram", username="easylegal_id", is_own_brand=True))
 
         with patch.object(ig_module, "run_actor_sync", return_value=FAKE_IG_ITEMS) as mock_run:
-            count, err = ig_module.scrape_instagram_profile(self.db, acc, max_posts=10)
+            count, err, backend = ig_module.scrape_instagram_profile(self.db, acc, max_posts=10)
 
         mock_run.assert_called_once()
         self.assertIsNone(err)
+        self.assertEqual(backend, "apify")
         self.assertEqual(count, 1)  # the "error" item is filtered out
 
         posts = self.db.query_posts(account_id=acc.id)
@@ -126,10 +127,11 @@ class TestApifyProfileScraping(unittest.TestCase):
         acc = self.db.upsert_account(Account.create(platform="tiktok", username="legalku_tiktok", is_own_brand=False))
 
         with patch.object(tt_module, "run_actor_sync", return_value=FAKE_TT_ITEMS) as mock_run:
-            count, err = tt_module.scrape_tiktok_profile(self.db, acc, max_posts=10)
+            count, err, backend = tt_module.scrape_tiktok_profile(self.db, acc, max_posts=10)
 
         mock_run.assert_called_once()
         self.assertIsNone(err)
+        self.assertEqual(backend, "apify")
         self.assertEqual(count, 1)
 
         posts = self.db.query_posts(account_id=acc.id)
