@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS posts (
     account_id TEXT NOT NULL,
     platform TEXT NOT NULL DEFAULT '',
     topic TEXT NOT NULL DEFAULT '',
+    content_type TEXT NOT NULL DEFAULT '',
     platform_post_id TEXT NOT NULL,
     caption TEXT NOT NULL,
     media_url TEXT NOT NULL,
@@ -93,6 +94,8 @@ class Database:
                 cols = [row[1] for row in cursor.fetchall()]
                 if cols and "topic" not in cols:
                     self.conn.execute("ALTER TABLE posts ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
+                if cols and "content_type" not in cols:
+                    self.conn.execute("ALTER TABLE posts ADD COLUMN content_type TEXT NOT NULL DEFAULT ''")
             except Exception:
                 pass
             try:
@@ -304,6 +307,7 @@ class Database:
                 p.account_id,
                 plat,
                 topic_val,
+                getattr(p, "content_type", "") or "",
                 p.platform_post_id,
                 p.caption,
                 p.media_url,
@@ -317,12 +321,13 @@ class Database:
             cursor = self.conn.executemany(
                 """
                 INSERT INTO posts (
-                    id, account_id, platform, topic, platform_post_id, caption, media_url,
+                    id, account_id, platform, topic, content_type, platform_post_id, caption, media_url,
                     likes, comments, views, posted_at, scraped_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_id, platform_post_id) DO UPDATE SET
                     platform = excluded.platform,
                     topic = excluded.topic,
+                    content_type = excluded.content_type,
                     caption = excluded.caption,
                     media_url = excluded.media_url,
                     likes = excluded.likes,
@@ -414,7 +419,7 @@ class Database:
         sql = f"""
             SELECT
                 id, account_id, platform, platform_post_id, caption, media_url,
-                likes, comments, views, posted_at, scraped_at, topic
+                likes, comments, views, posted_at, scraped_at, topic, content_type
             FROM posts
             {where_clause}
             ORDER BY {order_col}
@@ -446,7 +451,8 @@ class Database:
                 "views": r[8],
                 "posted_at": r[9],
                 "scraped_at": r[10],
-                "topic": r[11] if len(r) > 11 else "",
+                "topic": r[11],
+                "content_type": r[12],
             })
         is_complete = len(res) < fetch_limit
         if len(self._query_cache) >= 512:
@@ -591,6 +597,7 @@ class Database:
                     "id": p["id"],
                     "platform": p["platform"],
                     "username": p["username"],
+                    "content_type": p["content_type"],
                     "caption": p["caption"][:140] + ("..." if len(p["caption"]) > 140 else ""),
                     "likes": p["likes"],
                     "comments": p["comments"],

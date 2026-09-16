@@ -378,16 +378,18 @@ Postingan dengan Likes Tertinggi:
 """
         if top_posts:
             for idx, p in enumerate(top_posts, 1):
-                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
-                text += f"{idx}. \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
+                content_label = (p.get("content_type") or "post").upper()
+                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
+                text += f"{idx}. [{content_label}] \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
         else:
             text += "(Belum ada postingan tersimpan untuk akun ini.)\n"
 
         text += "\nPostingan Terbaru:\n"
         if recent_posts:
             for idx, p in enumerate(recent_posts, 1):
-                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
-                text += f"{idx}. \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
+                content_label = (p.get("content_type") or "post").upper()
+                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
+                text += f"{idx}. [{content_label}] \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
         else:
             text += "(Belum ada postingan tersimpan untuk akun ini.)\n"
 
@@ -444,8 +446,9 @@ Breakdown per Platform:
 Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user bertanya akun mana atau minta daftar postingan):
 """
             for idx, p in enumerate(viral_posts, 1):
-                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
-                context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
+                content_label = (p.get("content_type") or "post").upper()
+                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
+                context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()} · {content_label}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
 
             context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
             if account_breakdown:
@@ -762,9 +765,10 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
             if posts:
                 post_bullets = []
                 for p in posts:
-                    views_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
+                    content_label = (p.get("content_type") or "post").upper()
+                    views_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
                     post_bullets.append(
-                        f"- [{p['platform'].upper()}] @{p['username']}: \"{p['caption'][:100]}...\" (👍 {p['likes']:,} likes, 👁️ {views_txt})"
+                        f"- [{p['platform'].upper()} · {content_label}] @{p['username']}: \"{p['caption'][:100]}...\" (👍 {p['likes']:,} likes, 👁️ {views_txt})"
                     )
                 bullet_str = "\n".join(post_bullets)
                 reply = (

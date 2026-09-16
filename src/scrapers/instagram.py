@@ -48,46 +48,90 @@ def create_instaloader_instance() -> instaloader.Instaloader:
     return L
 
 
+def _merge_recent_posts(
+    feed_posts: List[Dict[str, Any]],
+    reel_posts: List[Dict[str, Any]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Deduplicates Feed/Reels and returns the newest items within one shared limit."""
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for post in feed_posts:
+        by_id[str(post["shortcode"])] = post
+    for post in reel_posts:
+        # Prefer the Reels result for duplicates: it carries the more specific content
+        # type and generally exposes video play/view data absent from the Feed result.
+        by_id[str(post["shortcode"])] = post
+    return sorted(
+        by_id.values(),
+        key=lambda post: str(post.get("date_utc") or ""),
+        reverse=True,
+    )[:limit]
+
+
+def _apify_item_to_raw_post(item: Dict[str, Any], content_type: str) -> Optional[Dict[str, Any]]:
+    if item.get("error") or not (item.get("shortCode") or item.get("id")):
+        return None
+    views = item.get("videoPlayCount")
+    if views is None:
+        views = item.get("videoViewCount")
+    return {
+        "shortcode": item.get("shortCode") or item.get("id"),
+        "id": str(item.get("id") or item.get("shortCode")),
+        "caption": item.get("caption") or "",
+        "display_url": (
+            item.get("videoUrl") if content_type == "reel" else None
+        ) or item.get("displayUrl") or "",
+        # Apify uses -1 for hidden/unavailable engagement counts.
+        "likes": max(0, item.get("likesCount") or 0),
+        "comments": max(0, item.get("commentsCount") or 0),
+        "video_view_count": max(0, views) if views is not None else None,
+        "date_utc": item.get("timestamp"),
+        "content_type": content_type,
+    }
+
+
+def _instaloader_post_to_raw_post(post: Any, content_type: str) -> Dict[str, Any]:
+    return {
+        "shortcode": post.shortcode,
+        "id": str(post.mediaid),
+        "caption": post.caption or "",
+        "display_url": post.video_url if content_type == "reel" and post.video_url else post.url or "",
+        "likes": max(0, post.likes),
+        "comments": max(0, post.comments),
+        "video_view_count": max(0, post.video_view_count) if post.is_video and post.video_view_count is not None else None,
+        "date_utc": post.date_utc.isoformat() + "+00:00" if post.date_utc else None,
+        "content_type": content_type,
+    }
+
+
 def _scrape_instagram_profile_apify(
     db: Database,
     account: Account,
     max_posts: int,
 ) -> Tuple[int, Optional[str]]:
-    """Scrapes an Instagram profile via the Apify `apify/instagram-scraper` actor."""
+    """Scrapes both Instagram Feed posts and Reels via Apify."""
     username = account.username.strip().lstrip("@")
-    logger.info(f"Starting Instagram scrape (Apify) for @{username} (limit={max_posts})")
+    logger.info(f"Starting Instagram Feed + Reels scrape (Apify) for @{username} (combined limit={max_posts})")
 
     try:
-        items = run_actor_sync(
-            INSTAGRAM_ACTOR_ID,
-            {
-                "directUrls": [f"https://www.instagram.com/{username}/"],
-                "resultsType": "posts",
-                "resultsLimit": max_posts,
-            },
-        )
+        source_posts: Dict[str, List[Dict[str, Any]]] = {"feed": [], "reel": []}
+        for content_type, results_type in (("feed", "posts"), ("reel", "reels")):
+            items = run_actor_sync(
+                INSTAGRAM_ACTOR_ID,
+                {
+                    "directUrls": [f"https://www.instagram.com/{username}/"],
+                    "resultsType": results_type,
+                    "resultsLimit": max_posts,
+                },
+            )
+            for item in items:
+                raw_post = _apify_item_to_raw_post(item, content_type)
+                if raw_post is not None:
+                    source_posts[content_type].append(raw_post)
 
-        raw_posts: List[Dict[str, Any]] = []
-        for item in items:
-            if item.get("error") or not (item.get("shortCode") or item.get("id")):
-                continue
-            # Apify's Instagram actor returns likesCount/commentsCount as -1 (not None)
-            # when the count is hidden/unavailable, not zero. `-1 or 0` is a no-op in
-            # Python since -1 is truthy, so the sentinel was silently stored as a real
-            # negative like count, corrupting averages and viral-post rankings.
-            raw_posts.append({
-                "shortcode": item.get("shortCode") or item.get("id"),
-                "id": str(item.get("id") or item.get("shortCode")),
-                "caption": item.get("caption") or "",
-                "display_url": item.get("displayUrl") or "",
-                "likes": max(0, item.get("likesCount") or 0),
-                "comments": max(0, item.get("commentsCount") or 0),
-                "video_view_count": item.get("videoViewCount"),
-                "date_utc": item.get("timestamp"),
-            })
-
+        raw_posts = _merge_recent_posts(source_posts["feed"], source_posts["reel"], max_posts)
         if not raw_posts:
-            err_msg = f"Apify Instagram scraper returned no usable posts for @{username} (profile may be private, empty, or not found)"
+            err_msg = f"Apify Instagram scraper returned no usable Feed posts or Reels for @{username} (profile may be private, empty, or not found)"
             logger.warning(err_msg)
             db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
             return 0, err_msg
@@ -102,7 +146,7 @@ def _scrape_instagram_profile_apify(
             logger.error(f"Ingestion error for @{username}: {err}")
             return 0, err
 
-        logger.info(f"Successfully scraped (Apify) and stored {inserted_count} posts for @{username}")
+        logger.info(f"Successfully scraped (Apify) and stored {inserted_count} Feed/Reels items for @{username}")
         return inserted_count, None
 
     except Exception as exc:
@@ -118,35 +162,30 @@ def _scrape_instagram_profile_instaloader(
     max_posts: int,
     delay_between_requests: float,
 ) -> Tuple[int, Optional[str]]:
-    """Scrapes an Instagram profile via Instaloader (free, anonymous by default; blockable by IP)."""
+    """Scrapes both Instagram Feed posts and Reels via Instaloader."""
     username = account.username.strip().lstrip("@")
-    logger.info(f"Starting Instagram scrape (Instaloader) for @{username} (limit={max_posts})")
+    logger.info(f"Starting Instagram Feed + Reels scrape (Instaloader) for @{username} (combined limit={max_posts})")
 
     L = create_instaloader_instance()
-    raw_posts: List[Dict[str, Any]] = []
 
     try:
         profile = instaloader.Profile.from_username(L.context, username)
+        source_posts: Dict[str, List[Dict[str, Any]]] = {"feed": [], "reel": []}
+        for content_type, iterator in (("feed", profile.get_posts()), ("reel", profile.get_reels())):
+            posts = source_posts[content_type]
+            for post in iterator:
+                if len(posts) >= max_posts:
+                    break
+                posts.append(_instaloader_post_to_raw_post(post, content_type))
+                if delay_between_requests > 0:
+                    time.sleep(delay_between_requests)
 
-        count = 0
-        for post in profile.get_posts():
-            if count >= max_posts:
-                break
-
-            raw_post = {
-                "shortcode": post.shortcode,
-                "id": str(post.mediaid),
-                "caption": post.caption or "",
-                "display_url": post.url or "",
-                "likes": post.likes,
-                "comments": post.comments,
-                "video_view_count": post.video_view_count if post.is_video else None,
-                "date_utc": post.date_utc.isoformat() + "+00:00" if post.date_utc else None,
-            }
-            raw_posts.append(raw_post)
-            count += 1
-            if delay_between_requests > 0:
-                time.sleep(delay_between_requests)
+        raw_posts = _merge_recent_posts(source_posts["feed"], source_posts["reel"], max_posts)
+        if not raw_posts:
+            err_msg = f"Instaloader returned no usable Feed posts or Reels for @{username}"
+            logger.warning(err_msg)
+            db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+            return 0, err_msg
 
         inserted_count, err = ingest_scraped_batch(
             db=db,
@@ -158,7 +197,7 @@ def _scrape_instagram_profile_instaloader(
             logger.error(f"Ingestion error for @{username}: {err}")
             return 0, err
 
-        logger.info(f"Successfully scraped and stored {inserted_count} posts for @{username}")
+        logger.info(f"Successfully scraped and stored {inserted_count} Feed/Reels items for @{username}")
         return inserted_count, None
 
     except instaloader.exceptions.ProfileNotExistsException:

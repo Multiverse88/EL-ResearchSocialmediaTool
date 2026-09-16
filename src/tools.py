@@ -172,6 +172,7 @@ def find_viral_content(
                 "id": p["id"],
                 "platform": p["platform"],
                 "username": p["username"],
+                "content_type": p["content_type"],
                 "caption": p["caption"],
                 "likes": p["likes"],
                 "comments": p["comments"],
@@ -291,6 +292,7 @@ def get_engagement_summary(
                 {
                     "id": p["id"],
                     "caption": p["caption"][:80] + ("..." if len(p["caption"]) > 80 else ""),
+                    "content_type": p["content_type"],
                     "likes": p["likes"],
                     "comments": p["comments"],
                     "views": p["views"],

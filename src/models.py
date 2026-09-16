@@ -76,6 +76,7 @@ class Post:
     scraped_at: str
     platform: str = ""
     topic: str = ""
+    content_type: str = ""
     @classmethod
     def create(
         cls,
@@ -91,6 +92,7 @@ class Post:
         post_id: Optional[str] = None,
         platform: str = "",
         topic: str = "",
+        content_type: str = "",
     ) -> Post:
         return cls(
             id=post_id or str(uuid.uuid4()),
@@ -105,6 +107,7 @@ class Post:
             scraped_at=scraped_at or datetime.now(timezone.utc).isoformat(),
             platform=platform.lower() if platform else "",
             topic=topic.strip().lower() if topic else "",
+            content_type=content_type.strip().lower(),
         )
 
     def to_dict(self) -> dict:

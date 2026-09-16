@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -135,10 +136,14 @@ class TestApifyProfileScraping(unittest.TestCase):
     def test_instagram_profile_scrape_uses_apify_and_ingests_posts(self):
         acc = self.db.upsert_account(Account.create(platform="instagram", username="easylegal_id", is_own_brand=True))
 
-        with patch.object(ig_module, "run_actor_sync", return_value=FAKE_IG_ITEMS) as mock_run:
+        with patch.object(ig_module, "run_actor_sync", side_effect=[FAKE_IG_ITEMS, []]) as mock_run:
             count, err, backend = ig_module.scrape_instagram_profile(self.db, acc, max_posts=10)
 
-        mock_run.assert_called_once()
+        self.assertEqual(mock_run.call_count, 2)
+        self.assertEqual(
+            [call.args[1]["resultsType"] for call in mock_run.call_args_list],
+            ["posts", "reels"],
+        )
         self.assertIsNone(err)
         self.assertEqual(backend, "apify")
         self.assertEqual(count, 1)  # the "error" item is filtered out
@@ -147,7 +152,120 @@ class TestApifyProfileScraping(unittest.TestCase):
         self.assertEqual(len(posts), 1)
         self.assertEqual(posts[0]["likes"], 4200)
         self.assertEqual(posts[0]["comments"], 150)
+        self.assertEqual(posts[0]["content_type"], "feed")
         self.assertIn("legalitas", posts[0]["caption"])
+
+
+    def test_instagram_profile_merges_feed_and_reels_deduplicates_and_applies_shared_limit(self):
+        acc = self.db.upsert_account(Account.create(platform="instagram", username="mixed_content", is_own_brand=True))
+        feed_items = [
+            {
+                "shortCode": "FEED_NEW",
+                "id": "1",
+                "caption": "new feed",
+                "displayUrl": "https://cdn.example/feed-new.jpg",
+                "likesCount": 10,
+                "commentsCount": 1,
+                "timestamp": "2026-03-04T10:00:00.000Z",
+            },
+            {
+                "shortCode": "SHARED",
+                "id": "2",
+                "caption": "shared feed copy",
+                "displayUrl": "https://cdn.example/shared.jpg",
+                "likesCount": 20,
+                "commentsCount": 2,
+                "timestamp": "2026-03-03T10:00:00.000Z",
+            },
+            {
+                "shortCode": "FEED_OLD",
+                "id": "3",
+                "caption": "old feed",
+                "displayUrl": "https://cdn.example/feed-old.jpg",
+                "likesCount": 30,
+                "commentsCount": 3,
+                "timestamp": "2026-03-01T10:00:00.000Z",
+            },
+        ]
+        reel_items = [
+            {
+                "shortCode": "SHARED",
+                "id": "2",
+                "caption": "shared reel copy",
+                "displayUrl": "https://cdn.example/shared-cover.jpg",
+                "videoUrl": "https://cdn.example/shared.mp4",
+                "likesCount": 25,
+                "commentsCount": 4,
+                "videoPlayCount": 900,
+                "timestamp": "2026-03-03T10:00:00.000Z",
+            },
+            {
+                "shortCode": "REEL_MID",
+                "id": "4",
+                "caption": "middle reel",
+                "displayUrl": "https://cdn.example/reel-cover.jpg",
+                "videoUrl": "https://cdn.example/reel.mp4",
+                "likesCount": 40,
+                "commentsCount": 5,
+                "videoPlayCount": 1200,
+                "timestamp": "2026-03-02T10:00:00.000Z",
+            },
+        ]
+
+        with patch.object(ig_module, "run_actor_sync", side_effect=[feed_items, reel_items]):
+            count, err, backend = ig_module.scrape_instagram_profile(self.db, acc, max_posts=3)
+
+        self.assertIsNone(err)
+        self.assertEqual(backend, "apify")
+        self.assertEqual(count, 3)
+        posts = self.db.query_posts(account_id=acc.id, limit=10)
+        self.assertEqual([post["platform_post_id"] for post in posts], ["FEED_NEW", "SHARED", "REEL_MID"])
+        self.assertEqual([post["content_type"] for post in posts], ["feed", "reel", "reel"])
+        self.assertEqual(posts[1]["views"], 900)
+        self.assertEqual(posts[1]["media_url"], "https://cdn.example/shared.mp4")
+
+    def test_instaloader_profile_merges_feed_and_reels(self):
+        acc = self.db.upsert_account(Account.create(platform="instagram", username="free_mixed", is_own_brand=True))
+
+        def fake_post(shortcode, date_utc, *, is_video=False, views=None):
+            post = MagicMock()
+            post.shortcode = shortcode
+            post.mediaid = shortcode
+            post.caption = shortcode
+            post.url = f"https://cdn.example/{shortcode}.jpg"
+            post.video_url = f"https://cdn.example/{shortcode}.mp4" if is_video else None
+            post.likes = 10
+            post.comments = 1
+            post.is_video = is_video
+            post.video_view_count = views
+            post.date_utc = datetime.fromisoformat(date_utc)
+            return post
+
+        shared_feed = fake_post("SHARED_FREE", "2026-03-02T10:00:00")
+        shared_reel = fake_post("SHARED_FREE", "2026-03-02T10:00:00", is_video=True, views=700)
+        profile = MagicMock()
+        profile.get_posts.return_value = [
+            fake_post("FEED_FREE", "2026-03-03T10:00:00"),
+            shared_feed,
+        ]
+        profile.get_reels.return_value = [
+            shared_reel,
+            fake_post("REEL_FREE", "2026-03-01T10:00:00", is_video=True, views=500),
+        ]
+
+        with patch.object(ig_module, "create_instaloader_instance") as mock_loader, \
+             patch.object(ig_module.instaloader.Profile, "from_username", return_value=profile):
+            count, err = ig_module._scrape_instagram_profile_instaloader(
+                self.db, acc, max_posts=3, delay_between_requests=0,
+            )
+
+        mock_loader.assert_called_once()
+        self.assertIsNone(err)
+        self.assertEqual(count, 3)
+        posts = self.db.query_posts(account_id=acc.id)
+        self.assertEqual([post["platform_post_id"] for post in posts], ["FEED_FREE", "SHARED_FREE", "REEL_FREE"])
+        self.assertEqual([post["content_type"] for post in posts], ["feed", "reel", "reel"])
+        self.assertEqual(posts[1]["views"], 700)
 
     def test_tiktok_profile_scrape_uses_apify_and_ingests_posts(self):
         acc = self.db.upsert_account(Account.create(platform="tiktok", username="legalku_tiktok", is_own_brand=False))

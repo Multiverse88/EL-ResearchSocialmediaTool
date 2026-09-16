@@ -53,6 +53,7 @@ def normalize_instagram_post(raw: Dict[str, Any], account_id: str, scraped_at: O
         scraped_at=scraped_at,
         platform="instagram",
         topic=str(raw.get("topic", "")),
+        content_type=str(raw.get("content_type", "")),
     )
 
 
