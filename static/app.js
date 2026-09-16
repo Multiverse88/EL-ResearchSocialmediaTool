@@ -263,6 +263,68 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function searchAccounts() {
+    const query = document.getElementById("account-search-input").value.trim();
+    if (!query) {
+      loadAccounts();
+      return;
+    }
+    try {
+      const res = await fetch(`/accounts/search?q=${encodeURIComponent(query)}`);
+      const json = await res.json();
+      const accounts = json.data || [];
+      accountCount.textContent = accounts.length;
+      if (accounts.length === 0) {
+        accountsTableBody.innerHTML = `<tr><td colspan="4" class="text-center">Tidak ada akun cocok.</td></tr>`;
+        return;
+      }
+      accountsTableBody.innerHTML = accounts
+        .map((acc) => {
+          const platBadge = acc.platform === "instagram" ? "badge-ig" : "badge-tt";
+          const brandBadge = acc.is_own_brand ? "badge-brand" : "badge-comp";
+          const brandText = acc.is_own_brand ? "Brand Sendiri" : "Kompetitor";
+          return `
+            <tr>
+              <td><span class="badge ${platBadge}">${acc.platform.toUpperCase()}</span></td>
+              <td><strong>@${acc.username}</strong></td>
+              <td><span class="badge ${brandBadge}">${brandText}</span></td>
+              <td>
+                <button class="btn btn-primary btn-sm" onclick="quickAddAccount('${acc.username}', '${acc.platform}')">Tambah</button>
+                <button class="btn btn-secondary btn-sm" onclick="queryAccountSummary('${acc.username}', '${acc.platform}')">Lihat Performa</button>
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+    } catch (err) {
+      accountsTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Gagal mencari akun: ${err.message}</td></tr>`;
+    }
+  }
+
+  window.quickAddAccount = async (username, platform) => {
+    try {
+      const res = await fetch("/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, username, is_own_brand: false }),
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        alert(`Akun @${username} berhasil ditambahkan!`);
+        loadAccounts();
+      } else {
+        alert(data.message || "Gagal menambahkan akun.");
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  document.getElementById("account-search-btn").addEventListener("click", searchAccounts);
+  document.getElementById("account-search-input").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") searchAccounts();
+  });
+
   window.queryAccountSummary = (username, platform) => {
     document.querySelector('[data-tab="chat-tab"]').click();
     sendChatMessage(`Bagaimana ringkasan performa engagement untuk akun @${username} di ${platform}?`);

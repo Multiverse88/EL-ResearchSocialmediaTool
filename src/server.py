@@ -178,6 +178,20 @@ def list_accounts():
         "data": [acc.to_dict() for acc in accounts],
     }
 
+@app.get("/accounts/search")
+def search_accounts(q: str = Query(..., description="Keyword untuk mencari username"), platform: Optional[str] = Query(None)):
+    """GET /accounts/search?q=...&platform=instagram - Cari akun berdasarkan keyword."""
+    if not q or not q.strip():
+        raise HTTPException(status_code=400, detail="Parameter 'q' wajib diisi")
+    db_inst = get_db()
+    accounts = db_inst.search_accounts(keyword=q, platform=platform)
+    return {
+        "status": "success",
+        "count": len(accounts),
+        "data": [acc.to_dict() for acc in accounts],
+    }
+
+
 
 @app.post("/accounts", dependencies=[Depends(require_api_key)])
 def create_account(payload: CreateAccountRequest):

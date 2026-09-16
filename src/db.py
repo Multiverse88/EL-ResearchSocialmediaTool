@@ -194,6 +194,25 @@ class Database:
             self._account_usernames[acc.id] = acc.username
         return accounts
 
+    def search_accounts(self, keyword: str, platform: Optional[str] = None, limit: int = 20) -> List[Account]:
+        """Search accounts by username keyword with optional platform filter."""
+        clean_kw = f"%{keyword.strip().lower()}%"
+        clauses = ["(username LIKE ? OR platform LIKE ?)"]
+        params: List[Any] = [clean_kw, clean_kw]
+        if platform:
+            clauses.append("platform = ?")
+            params.append(platform.lower())
+        where_sql = "WHERE " + " AND ".join(clauses)
+        cursor = self.conn.execute(
+            f"SELECT id, platform, username, is_own_brand, created_at FROM accounts {where_sql} ORDER BY username ASC LIMIT ?",
+            [*params, limit],
+        )
+        return [
+            Account(id=r[0], platform=r[1], username=r[2], is_own_brand=bool(r[3]), created_at=r[4])
+            for r in cursor.fetchall()
+        ]
+
+
     # Posts & Ingestion
     def upsert_posts(self, posts: List[Post]) -> int:
         if not posts:
