@@ -339,6 +339,7 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
             "model": target_model,
             "stream": True,
             "messages": messages,
+            "reasoning_effort": "high",
         }
 
         full_content = ""
@@ -395,6 +396,7 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
             "model": target_model,
             "stream": True,
             "messages": messages,
+            "reasoning_effort": "high",
         }
 
         got_any_output = False
