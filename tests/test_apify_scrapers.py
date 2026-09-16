@@ -160,6 +160,18 @@ class TestApifyProfileScraping(unittest.TestCase):
         mock_apify.assert_called_once()
         mock_free.assert_not_called()
 
+    def test_apify_failure_reason_surfaced_when_instaloader_fallback_also_fails(self):
+        acc = self.db.upsert_account(Account.create(platform="instagram", username="both_fail_test", is_own_brand=True))
+
+        with patch.object(ig_module, "_scrape_instagram_profile_apify", return_value=(0, "quota exceeded")), \
+             patch.object(ig_module, "_scrape_instagram_profile_instaloader", return_value=(0, "rate limit (429)")):
+            count, err, backend = ig_module.scrape_instagram_profile(self.db, acc, max_posts=5)
+
+        self.assertEqual(count, 0)
+        self.assertEqual(backend, "instaloader")
+        self.assertIn("quota exceeded", err)
+        self.assertIn("rate limit (429)", err)
+
 
 class TestApifyHashtagScraping(unittest.TestCase):
     def setUp(self):

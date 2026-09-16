@@ -191,12 +191,20 @@ def scrape_instagram_profile(
     Falls back to Instaloader (with INSTAGRAM_USERNAME/PASSWORD if set) when Apify
     is unconfigured or fails (e.g. quota exhausted).
     Returns (posts_added, error, backend) where backend is "apify" or "instaloader" —
-    the scraper that actually produced the result, never assumed from configuration alone.
+    the scraper that actually produced the result, never assumed from configuration
+    alone. If Apify was attempted and failed before falling back, and Instaloader then
+    also fails, both failure reasons are included in `error` — a silent fallback would
+    leave the caller (and the user, via chat receipts) unable to tell that Apify was
+    ever tried at all, let alone why it failed.
     """
+    apify_err: Optional[str] = None
     if is_apify_configured():
         count, err = _scrape_instagram_profile_apify(db, account, max_posts)
         if not err:
             return count, None, "apify"
+        apify_err = err
         logger.warning(f"Apify failed, falling back to Instaloader: {err}")
     count, err = _scrape_instagram_profile_instaloader(db, account, max_posts, delay_between_requests)
+    if err and apify_err:
+        err = f"Apify: {apify_err} | Instaloader: {err}"
     return count, err, "instaloader"
