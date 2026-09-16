@@ -82,6 +82,7 @@ class Database:
         self._all_accounts: Optional[List[Account]] = None
         self._account_summaries: Dict[str, Optional[Dict[str, Any]]] = {}
         self._top_posts: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+        self._query_cache: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -257,6 +258,7 @@ class Database:
                 records,
             )
             self._account_summaries.clear()
+            self._query_cache.clear()
             self._top_posts.clear()
             return cursor.rowcount
 
@@ -273,6 +275,14 @@ class Database:
         limit: int = 50,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
+        cache_key = (
+            account_id, platform, username, keyword, topic, order_by,
+            date_from, date_to, limit, offset,
+        )
+        cached = self._query_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         clauses = []
         params: List[Any] = []
 
@@ -359,6 +369,9 @@ class Database:
                 "scraped_at": r[10],
                 "topic": r[11] if len(r) > 11 else "",
             })
+        if len(self._query_cache) >= 512:
+            self._query_cache.clear()
+        self._query_cache[cache_key] = res
         return res
 
     def get_account_summary(self, account_id: str) -> Optional[Dict[str, Any]]:
