@@ -4,12 +4,15 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+import threading
+from queue import Queue
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import anthropic
 import httpx
 from .db import Database
 from .tools import CLAUDE_TOOLS_SPEC, execute_claude_tool
+from .chat_actions import resolve_account_reference
 
 logger = logging.getLogger("backend.claude")
 
@@ -135,8 +138,14 @@ class ClaudeChatHandler:
                 return self._merge_action_context(fallback, action_result)
 
         return self._merge_action_context(self._local_fallback_handler(db, message), action_result)
-
-    def _run_chat_actions(self, db: Database, message: str, history: List[Dict[str, Any]], is_openai_router: bool):
+    def _run_chat_actions(
+        self,
+        db: Database,
+        message: str,
+        history: List[Dict[str, Any]],
+        is_openai_router: bool,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ):
         """Runs the deterministic parser first, then (only for messages that show some
         sign of action intent it didn't already resolve) consults the AI planner via the
         router. Returns an `ActionExecutionResult` — empty when nothing action-like was
@@ -149,7 +158,9 @@ class ClaudeChatHandler:
         from .chat_actions import ChatActionOrchestrator, ActionExecutionResult
         try:
             planner = self._plan_actions_via_router if (is_openai_router and self.api_key) else None
-            return ChatActionOrchestrator().plan_and_execute(db, message, history, planner=planner)
+            return ChatActionOrchestrator().plan_and_execute(
+                db, message, history, planner=planner, progress_callback=progress_callback,
+            )
         except Exception as exc:
             logger.error(f"Chat action orchestration failed unexpectedly for message {message!r}: {exc}", exc_info=True)
             return ActionExecutionResult()
@@ -240,7 +251,31 @@ class ClaudeChatHandler:
             not self.api_key.startswith("sk-ant-")
             or (self.base_url and "anthropic.com" not in self.base_url)
         )
-        action_result = self._run_chat_actions(db, message, history, is_openai_router)
+        from .chat_actions import has_action_intent
+        if has_action_intent(message):
+            events: Queue[Tuple[str, Any]] = Queue()
+
+            def run_actions() -> None:
+                events.put(("progress", "Menyiapkan proses scraping dan memeriksa data akun…"))
+                result = self._run_chat_actions(
+                    db, message, history, is_openai_router,
+                    progress_callback=lambda text: events.put(("progress", text)),
+                )
+                events.put(("result", result))
+
+            worker = threading.Thread(target=run_actions, name="chat-scrape-action", daemon=True)
+            worker.start()
+            while True:
+                event_type, payload = events.get()
+                if event_type == "progress":
+                    yield {"type": "reasoning", "text": f"🔄 {payload}\n"}
+                    continue
+                action_result = payload
+                worker.join(timeout=0.1)
+                break
+        else:
+            action_result = self._run_chat_actions(db, message, history, is_openai_router)
+
         if action_result.clarification:
             yield {"type": "content", "text": action_result.clarification}
             return
@@ -298,6 +333,22 @@ class ClaudeChatHandler:
             words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
             matched_topic = words[0] if words else "pendirian PT"
         return matched_topic
+
+    def _resolve_conversation_account(
+        self,
+        db: Database,
+        user_message: str,
+        history: List[Dict[str, Any]],
+    ) -> Optional[Tuple[str, str]]:
+        """Returns the most recently referenced stored account for account follow-ups."""
+        current = resolve_account_reference(db, user_message)
+        if current is not None:
+            return current
+        for past_message in reversed(history[-8:]):
+            account_ref = resolve_account_reference(db, str(past_message.get("content", "")))
+            if account_ref is not None:
+                return account_ref
+        return None
 
     def _ensure_topic_freshness(self, db: Database, matched_topic: str) -> Optional[str]:
         """
@@ -413,6 +464,13 @@ Postingan dengan Likes Tertinggi:
         instead — topic-keyword resolution never runs, so an unrelated word extracted
         from the sentence can't silently filter the account's own data.
         """
+        if account_ref is None:
+            # Explicit topics in the new message take precedence. Otherwise preserve the
+            # most recent account subject for follow-ups such as "apa aja konten terbaru
+            # nya" instead of extracting a filler word ("aja") as a new keyword.
+            has_explicit_topic = any(topic in user_message.lower() for topic in self._resolve_topics(db))
+            if not has_explicit_topic:
+                account_ref = self._resolve_conversation_account(db, user_message, history)
         if account_ref is not None:
             platform, username = account_ref
             context_text, account_summary = self._build_account_context_text(db, platform, username)
@@ -476,6 +534,8 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 
         system_instruction = (
             f"{DEFAULT_SYSTEM_PROMPT}\n\n"
+            f"SUBJEK AKTIF PERCAKAPAN: {subject_label}. Pertahankan subjek ini untuk pertanyaan lanjutan "
+            f"dan jangan mengubah kata pengisi seperti 'aja', 'nya', 'terbaru', atau 'gimana' menjadi topik baru.\n\n"
             f"Berikut data hasil scraping terkini yang relevan dengan {subject_label}:\n"
             f"{context_text}\n"
             f"Gunakan SEMUA data faktual di atas untuk menjawab pertanyaan tim marketing secara mendalam dan lengkap — "

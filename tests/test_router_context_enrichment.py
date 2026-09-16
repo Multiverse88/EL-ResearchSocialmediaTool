@@ -144,6 +144,30 @@ class TestBuildRouterContextAccountMode(unittest.TestCase):
         system_content = messages[0]["content"]
         self.assertIn("belum memiliki data tersimpan", system_content)
 
+    def test_follow_up_keeps_recent_account_subject_instead_of_keyword_aja(self):
+        history = [
+            {
+                "role": "user",
+                "content": "Coba scrape ulang @id.easylegal, siapa tahu error-nya sudah bisa diperbaiki?",
+            },
+            {
+                "role": "assistant",
+                "content": "Ringkasan akun @id.easylegal (instagram): Total postingan: 30",
+            },
+        ]
+        with patch.object(self.handler, "_ensure_topic_freshness") as mock_freshness:
+            _, _, _, messages, matched_topic, subject_data = self.handler._build_router_context(
+                self.db, "apa aja konten terbaru nya", history,
+            )
+
+        system_content = messages[0]["content"]
+        self.assertIsNone(matched_topic)
+        self.assertEqual(subject_data["username"], "id.easylegal")
+        self.assertEqual(subject_data["total_posts"], 30)
+        self.assertIn("PROFIL AKUN @id.easylegal", system_content)
+        self.assertNotIn("Topik / Kata Kunci: 'aja'", system_content)
+        mock_freshness.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

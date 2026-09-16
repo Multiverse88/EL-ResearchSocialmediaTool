@@ -1,4 +1,5 @@
 import unittest
+import threading
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -6,6 +7,7 @@ from fastapi.testclient import TestClient
 from src.claude_client import ClaudeChatHandler
 from src.db import Database
 from src.server import app
+from src.chat_actions import ActionExecutionResult
 
 
 class TestChatActionOrchestrationNeverCrashesChat(unittest.TestCase):
@@ -41,6 +43,35 @@ class TestChatActionOrchestrationNeverCrashesChat(unittest.TestCase):
             chunks = list(self.handler.stream_chat(self.db, "riset topik pendirian PT", []))
 
         self.assertTrue(any(c.get("type") == "content" and c.get("text") for c in chunks))
+
+    def test_stream_chat_yields_loading_before_action_execution_finishes(self):
+        action_started = threading.Event()
+        release_action = threading.Event()
+        first_chunk_ready = threading.Event()
+        chunks = []
+
+        def blocking_action(*args, **kwargs):
+            action_started.set()
+            release_action.wait(timeout=2)
+            return ActionExecutionResult()
+
+        stream = self.handler.stream_chat(self.db, "coba scrape ulang @id.easylegal", [])
+
+        def consume_first_chunk():
+            chunks.append(next(stream))
+            first_chunk_ready.set()
+
+        consumer = threading.Thread(target=consume_first_chunk)
+        with patch.object(self.handler, "_run_chat_actions", side_effect=blocking_action):
+            consumer.start()
+            self.assertTrue(action_started.wait(timeout=1))
+            arrived_before_action_finished = first_chunk_ready.wait(timeout=0.2)
+            release_action.set()
+            consumer.join(timeout=2)
+
+        self.assertTrue(arrived_before_action_finished)
+        self.assertEqual(chunks[0]["type"], "reasoning")
+        self.assertIn("Menyiapkan", chunks[0]["text"])
 
 
 class TestChatEndpointNeverReturns500(unittest.TestCase):

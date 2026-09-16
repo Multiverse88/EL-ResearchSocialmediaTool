@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import instaloader
 from ..models import Account, Post, ScrapeLog
@@ -108,6 +108,7 @@ def _scrape_instagram_profile_apify(
     db: Database,
     account: Account,
     max_posts: int,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[int, Optional[str]]:
     """Scrapes both Instagram Feed posts and Reels via Apify."""
     username = account.username.strip().lstrip("@")
@@ -116,6 +117,9 @@ def _scrape_instagram_profile_apify(
     try:
         source_posts: Dict[str, List[Dict[str, Any]]] = {"feed": [], "reel": []}
         for content_type, results_type in (("feed", "posts"), ("reel", "reels")):
+            if progress_callback:
+                label = "Feed" if content_type == "feed" else "Reels"
+                progress_callback(f"Mengambil postingan {label} @{username}…")
             items = run_actor_sync(
                 INSTAGRAM_ACTOR_ID,
                 {
@@ -129,6 +133,8 @@ def _scrape_instagram_profile_apify(
                 if raw_post is not None:
                     source_posts[content_type].append(raw_post)
 
+        if progress_callback:
+            progress_callback("Menggabungkan Feed dan Reels, menghapus duplikasi, lalu menyimpan data…")
         raw_posts = _merge_recent_posts(source_posts["feed"], source_posts["reel"], max_posts)
         if not raw_posts:
             err_msg = f"Apify Instagram scraper returned no usable Feed posts or Reels for @{username} (profile may be private, empty, or not found)"
@@ -147,6 +153,8 @@ def _scrape_instagram_profile_apify(
             return 0, err
 
         logger.info(f"Successfully scraped (Apify) and stored {inserted_count} Feed/Reels items for @{username}")
+        if progress_callback:
+            progress_callback(f"Selesai: {inserted_count} postingan Feed/Reels tersimpan")
         return inserted_count, None
 
     except Exception as exc:
@@ -161,6 +169,7 @@ def _scrape_instagram_profile_instaloader(
     account: Account,
     max_posts: int,
     delay_between_requests: float,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[int, Optional[str]]:
     """Scrapes both Instagram Feed posts and Reels via Instaloader."""
     username = account.username.strip().lstrip("@")
@@ -172,6 +181,9 @@ def _scrape_instagram_profile_instaloader(
         profile = instaloader.Profile.from_username(L.context, username)
         source_posts: Dict[str, List[Dict[str, Any]]] = {"feed": [], "reel": []}
         for content_type, iterator in (("feed", profile.get_posts()), ("reel", profile.get_reels())):
+            if progress_callback:
+                label = "Feed" if content_type == "feed" else "Reels"
+                progress_callback(f"Mengambil postingan {label} @{username}…")
             posts = source_posts[content_type]
             for post in iterator:
                 if len(posts) >= max_posts:
@@ -180,6 +192,8 @@ def _scrape_instagram_profile_instaloader(
                 if delay_between_requests > 0:
                     time.sleep(delay_between_requests)
 
+        if progress_callback:
+            progress_callback("Menggabungkan Feed dan Reels, menghapus duplikasi, lalu menyimpan data…")
         raw_posts = _merge_recent_posts(source_posts["feed"], source_posts["reel"], max_posts)
         if not raw_posts:
             err_msg = f"Instaloader returned no usable Feed posts or Reels for @{username}"
@@ -198,6 +212,8 @@ def _scrape_instagram_profile_instaloader(
             return 0, err
 
         logger.info(f"Successfully scraped and stored {inserted_count} Feed/Reels items for @{username}")
+        if progress_callback:
+            progress_callback(f"Selesai: {inserted_count} postingan Feed/Reels tersimpan")
         return inserted_count, None
 
     except instaloader.exceptions.ProfileNotExistsException:
@@ -226,28 +242,28 @@ def scrape_instagram_profile(
     account: Account,
     max_posts: int = 30,
     delay_between_requests: float = 1.0,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[int, Optional[str], str]:
     """
-    Scrapes public posts from an Instagram profile and saves them to the database.
-    Uses Apify (apify/instagram-scraper) when APIFY_API_TOKEN is configured — reliable,
-    runs on Apify's own residential proxies, not blockable from this VPS's IP.
-    Falls back to Instaloader (with INSTAGRAM_USERNAME/PASSWORD if set) when Apify
-    is unconfigured or fails (e.g. quota exhausted).
-    Returns (posts_added, error, backend) where backend is "apify" or "instaloader" —
-    the scraper that actually produced the result, never assumed from configuration
-    alone. If Apify was attempted and failed before falling back, and Instaloader then
-    also fails, both failure reasons are included in `error` — a silent fallback would
-    leave the caller (and the user, via chat receipts) unable to tell that Apify was
-    ever tried at all, let alone why it failed.
+    Scrapes public Feed posts and Reels from an Instagram profile and saves them.
+    Uses Apify when configured, then falls back to Instaloader. The returned backend
+    always identifies the scraper that produced the result. If both fail, the error
+    includes both reasons. `progress_callback`, when supplied, receives user-facing
+    phase updates suitable for a streaming chat UI.
     """
     apify_err: Optional[str] = None
     if is_apify_configured():
-        count, err = _scrape_instagram_profile_apify(db, account, max_posts)
+        count, err = _scrape_instagram_profile_apify(
+            db, account, max_posts, progress_callback=progress_callback,
+        )
         if not err:
             return count, None, "apify"
         apify_err = err
         logger.warning(f"Apify failed, falling back to Instaloader: {err}")
-    count, err = _scrape_instagram_profile_instaloader(db, account, max_posts, delay_between_requests)
+    count, err = _scrape_instagram_profile_instaloader(
+        db, account, max_posts, delay_between_requests,
+        progress_callback=progress_callback,
+    )
     if err and apify_err:
         err = f"Apify: {apify_err} | Instaloader: {err}"
     return count, err, "instaloader"

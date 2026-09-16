@@ -211,9 +211,12 @@ class TestApifyProfileScraping(unittest.TestCase):
                 "timestamp": "2026-03-02T10:00:00.000Z",
             },
         ]
+        progress = []
 
         with patch.object(ig_module, "run_actor_sync", side_effect=[feed_items, reel_items]):
-            count, err, backend = ig_module.scrape_instagram_profile(self.db, acc, max_posts=3)
+            count, err, backend = ig_module.scrape_instagram_profile(
+                self.db, acc, max_posts=3, progress_callback=progress.append,
+            )
 
         self.assertIsNone(err)
         self.assertEqual(backend, "apify")
@@ -223,6 +226,15 @@ class TestApifyProfileScraping(unittest.TestCase):
         self.assertEqual([post["content_type"] for post in posts], ["feed", "reel", "reel"])
         self.assertEqual(posts[1]["views"], 900)
         self.assertEqual(posts[1]["media_url"], "https://cdn.example/shared.mp4")
+        self.assertEqual(
+            progress,
+            [
+                "Mengambil postingan Feed @mixed_content…",
+                "Mengambil postingan Reels @mixed_content…",
+                "Menggabungkan Feed dan Reels, menghapus duplikasi, lalu menyimpan data…",
+                "Selesai: 3 postingan Feed/Reels tersimpan",
+            ],
+        )
 
     def test_instaloader_profile_merges_feed_and_reels(self):
         acc = self.db.upsert_account(Account.create(platform="instagram", username="free_mixed", is_own_brand=True))

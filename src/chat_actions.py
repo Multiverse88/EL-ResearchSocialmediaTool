@@ -17,6 +17,7 @@ MAX_POSTS_LIMIT = 100
 MIN_TARGETS = 2
 MAX_TARGETS = 4
 DEFAULT_MAX_POSTS = 30
+ProgressCallback = Optional[Callable[[str], None]]
 
 ACTION_TYPES = (
     "scrape_profile",
@@ -233,6 +234,21 @@ def _extract_bare_account_mention(message: str) -> Optional[Tuple[str, str]]:
         platform = "instagram" if platform_word in ("instagram", "ig") else "tiktok"
         if username and username not in _BARE_ACCOUNT_USERNAME_BLOCKLIST:
             return username, platform
+    return None
+
+
+def resolve_account_reference(db: Database, message: str) -> Optional[Tuple[str, str]]:
+    """Resolves an account mentioned in chat text, but only when it exists in the DB."""
+    msg_lower = message.lower()
+    for username in _extract_mentions(message):
+        platform = _infer_platform(db, username, msg_lower)
+        if db.get_account_by_username(platform, username):
+            return platform, username
+    bare = _extract_bare_account_mention(message)
+    if bare:
+        username, platform = bare
+        if db.get_account_by_username(platform, username):
+            return platform, username
     return None
 
 
@@ -528,37 +544,64 @@ def _get_or_create_account(db: Database, platform: str, username: str, monitorin
     return db.upsert_account(acc)
 
 
-def _run_profile_scrape(db: Database, account: Account, max_posts: int) -> Tuple[int, Optional[str], str]:
+def _run_profile_scrape(
+    db: Database,
+    account: Account,
+    max_posts: int,
+    progress_callback: ProgressCallback = None,
+) -> Tuple[int, Optional[str], str]:
     if account.platform == "instagram":
         from .scrapers.instagram import scrape_instagram_profile
+        if progress_callback is not None:
+            return scrape_instagram_profile(
+                db, account, max_posts=max_posts, progress_callback=progress_callback,
+            )
         return scrape_instagram_profile(db, account, max_posts=max_posts)
+    if progress_callback:
+        progress_callback(f"Mengambil video TikTok @{account.username}…")
     from .scrapers.tiktok import scrape_tiktok_profile
     return scrape_tiktok_profile(db, account, max_posts=max_posts)
 
 
-def _execute_scrape_profile(db: Database, action: ScrapeProfileAction, ttl_hours: float) -> ActionReceipt:
+def _execute_scrape_profile(
+    db: Database,
+    action: ScrapeProfileAction,
+    ttl_hours: float,
+    progress_callback: ProgressCallback = None,
+) -> ActionReceipt:
     acc = _get_or_create_account(db, action.platform, action.username, monitoring_enabled=False)
     age_hours = _age_from_timestamp(db.get_account_freshness(acc.id))
     if age_hours is not None and age_hours < ttl_hours and not action.force_refresh:
         age_minutes = age_hours * 60
-        return ActionReceipt(
+        receipt = ActionReceipt(
             action_type="scrape_profile", platform=action.platform, target=action.username,
             backend="cache", success=True, used_cache=True, cache_age_minutes=age_minutes,
             detail=f"Menggunakan data cache @{action.username} (umur {age_minutes:.0f} menit)",
         )
+        if progress_callback:
+            progress_callback(receipt.detail)
+        return receipt
 
-    count, err, backend = _run_profile_scrape(db, acc, action.max_posts)
+    if progress_callback:
+        progress_callback(f"Menyiapkan scraping @{action.username}…")
+    count, err, backend = _run_profile_scrape(
+        db, acc, action.max_posts, progress_callback=progress_callback,
+    )
     if err:
-        return ActionReceipt(
+        receipt = ActionReceipt(
             action_type="scrape_profile", platform=action.platform, target=action.username,
             backend=backend, success=False, error=err,
             detail=f"Gagal mengambil data @{action.username}: {err}",
         )
-    return ActionReceipt(
-        action_type="scrape_profile", platform=action.platform, target=action.username,
-        backend=backend, success=True, posts_collected=count,
-        detail=f"Berhasil mengambil @{action.username} via {backend}: {count} postingan baru",
-    )
+    else:
+        receipt = ActionReceipt(
+            action_type="scrape_profile", platform=action.platform, target=action.username,
+            backend=backend, success=True, posts_collected=count,
+            detail=f"Berhasil mengambil @{action.username} via {backend}: {count} postingan baru",
+        )
+    if progress_callback:
+        progress_callback(receipt.detail)
+    return receipt
 
 
 def _execute_research_topic(db: Database, action: ResearchTopicAction, ttl_hours: float) -> ActionReceipt:
@@ -589,23 +632,36 @@ def _execute_research_topic(db: Database, action: ResearchTopicAction, ttl_hours
     )
 
 
-def _execute_compare_profiles(db: Database, action: CompareProfilesAction, ttl_hours: float) -> List[ActionReceipt]:
+def _execute_compare_profiles(
+    db: Database,
+    action: CompareProfilesAction,
+    ttl_hours: float,
+    progress_callback: ProgressCallback = None,
+) -> List[ActionReceipt]:
     receipts = []
     for t in action.targets:
         sub_action = ScrapeProfileAction(
             platform=t["platform"], username=t["username"],
             max_posts=action.max_posts, force_refresh=action.force_refresh,
         )
-        receipts.append(_execute_scrape_profile(db, sub_action, ttl_hours))
+        receipts.append(_execute_scrape_profile(
+            db, sub_action, ttl_hours, progress_callback=progress_callback,
+        ))
     return receipts
 
 
-def _execute_monitor_account(db: Database, action: MonitorAccountAction) -> ActionReceipt:
+def _execute_monitor_account(
+    db: Database,
+    action: MonitorAccountAction,
+    progress_callback: ProgressCallback = None,
+) -> ActionReceipt:
     acc = _get_or_create_account(db, action.platform, action.username, monitoring_enabled=True)
     if not acc.monitoring_enabled:
         acc = db.set_account_monitoring(acc.id, True)
 
-    count, err, backend = _run_profile_scrape(db, acc, action.max_posts)
+    count, err, backend = _run_profile_scrape(
+        db, acc, action.max_posts, progress_callback=progress_callback,
+    )
     if err:
         return ActionReceipt(
             action_type="monitor_account", platform=action.platform, target=action.username,
@@ -635,7 +691,11 @@ def _execute_stop_monitoring(db: Database, action: StopMonitoringAction) -> Acti
     )
 
 
-def _execute_replace_monitored_account(db: Database, action: ReplaceMonitoredAccountAction) -> ActionReceipt:
+def _execute_replace_monitored_account(
+    db: Database,
+    action: ReplaceMonitoredAccountAction,
+    progress_callback: ProgressCallback = None,
+) -> ActionReceipt:
     old_acc = db.get_account_by_username(action.platform, action.old_username)
     new_acc = db.get_account_by_username(action.platform, action.new_username)
 
@@ -650,7 +710,9 @@ def _execute_replace_monitored_account(db: Database, action: ReplaceMonitoredAcc
             db.set_account_monitoring(old_acc.id, False)
         target_acc = db.set_account_monitoring(new_acc.id, True)
 
-    count, err, backend = _run_profile_scrape(db, target_acc, action.max_posts)
+    count, err, backend = _run_profile_scrape(
+        db, target_acc, action.max_posts, progress_callback=progress_callback,
+    )
     if err:
         return ActionReceipt(
             action_type="replace_monitored_account", platform=action.platform, target=target_acc.username,
@@ -695,6 +757,7 @@ class ChatActionOrchestrator:
         message: str,
         history: List[Dict[str, Any]],
         planner: Optional[PlannerFn] = None,
+        progress_callback: ProgressCallback = None,
     ) -> ActionExecutionResult:
         plan = parse_deterministic(db, message)
 
@@ -727,20 +790,33 @@ class ChatActionOrchestrator:
         for action in plan.actions:
             action_type = getattr(action, "type", None)
             if action_type == "scrape_profile":
-                receipt = _execute_scrape_profile(db, action, self.ttl_hours)
+                receipt = _execute_scrape_profile(
+                    db, action, self.ttl_hours, progress_callback=progress_callback,
+                )
                 receipts.append(receipt)
                 matched_account = (receipt.platform, receipt.target)
             elif action_type == "research_topic":
-                receipts.append(_execute_research_topic(db, action, self.ttl_hours))
+                if progress_callback:
+                    progress_callback(f"Mengambil data terbaru untuk topik '{action.keyword}'…")
+                receipt = _execute_research_topic(db, action, self.ttl_hours)
+                receipts.append(receipt)
+                if progress_callback:
+                    progress_callback(receipt.detail)
                 matched_topic = action.keyword
             elif action_type == "compare_profiles":
-                receipts.extend(_execute_compare_profiles(db, action, self.ttl_hours))
+                receipts.extend(_execute_compare_profiles(
+                    db, action, self.ttl_hours, progress_callback=progress_callback,
+                ))
             elif action_type == "monitor_account":
-                receipt = _execute_monitor_account(db, action)
+                receipt = _execute_monitor_account(
+                    db, action, progress_callback=progress_callback,
+                )
                 receipts.append(receipt)
                 matched_account = (receipt.platform, receipt.target)
             elif action_type == "replace_monitored_account":
-                receipt = _execute_replace_monitored_account(db, action)
+                receipt = _execute_replace_monitored_account(
+                    db, action, progress_callback=progress_callback,
+                )
                 receipts.append(receipt)
                 matched_account = (receipt.platform, receipt.target)
             elif action_type == "stop_monitoring":
