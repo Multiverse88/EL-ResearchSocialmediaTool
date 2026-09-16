@@ -82,6 +82,41 @@ class TestScrapeProfile(unittest.TestCase):
         self.assertEqual(r.error, "quota exceeded")
         self.assertFalse(r.used_cache)
 
+    def test_bare_account_reference_without_at_sign_triggers_scrape(self):
+        # Regression test for a real production incident: "saya mau riset soal akun
+        # instagram id.easylegal" has no "@" and no cari/scrape/ambil/refresh verb, so
+        # it was falling through to the old topic-research flow and being misread as a
+        # keyword search for "soal" — the account was never actually looked up.
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(5, None, "apify")) as mock_scrape:
+            result = self.orch.plan_and_execute(
+                self.db, "saya mau riset soal akun instagram id.easylegal", [],
+            )
+
+        mock_scrape.assert_called_once()
+        self.assertEqual(len(result.receipts), 1)
+        r = result.receipts[0]
+        self.assertTrue(r.success)
+        self.assertEqual(r.target, "id.easylegal")
+        self.assertEqual(r.platform, "instagram")
+
+        acc = self.db.get_account_by_username("instagram", "id.easylegal")
+        self.assertIsNotNone(acc)
+
+    def test_bare_account_reference_username_before_platform(self):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "apify")) as mock_scrape:
+            result = self.orch.plan_and_execute(self.db, "cek akun id.easylegal di instagram dong", [])
+        mock_scrape.assert_called_once()
+        self.assertTrue(result.receipts[0].success)
+
+    def test_generic_pronoun_after_akun_platform_does_not_misfire(self):
+        # "akun tiktok kami" — no real username present, must not scrape a literal
+        # account named "kami".
+        with patch.object(tt_module, "scrape_tiktok_profile") as mock_scrape:
+            result = self.orch.plan_and_execute(self.db, "akun tiktok kami gimana performanya", [])
+        mock_scrape.assert_not_called()
+        self.assertEqual(result.receipts, [])
+        self.assertIsNone(self.db.get_account_by_username("tiktok", "kami"))
+
 
 class TestMonitoring(unittest.TestCase):
     def setUp(self):

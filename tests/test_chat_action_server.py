@@ -117,6 +117,24 @@ class TestChatActionEndToEnd(unittest.TestCase):
         self.assertEqual(len(db.list_accounts()), before_count)
         self.assertIsNone(db.get_account_by_username("instagram", target_username))
 
+    def test_bare_account_riset_message_through_chat_endpoint(self):
+        # Exact class of message from the production incident screenshot: "saya mau
+        # riset soal akun instagram id.easylegal" — no "@", no cari/scrape verb.
+        username = f"e2e_bare_account_{self.suffix}"
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(4, None, "apify")) as mock_scrape:
+            res = self.client.post(
+                "/chat",
+                json={"message": f"saya mau riset soal akun instagram {username}"},
+            )
+        self.assertEqual(res.status_code, 200)
+        mock_scrape.assert_called_once()
+        data = res.json()
+        self.assertEqual(len(data["action_receipts"]), 1)
+        self.assertTrue(data["action_receipts"][0]["success"])
+
+        db = get_db()
+        self.assertIsNotNone(db.get_account_by_username("instagram", username))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -141,7 +141,31 @@ _STOP_MONITOR_RE = re.compile(r"\b(berhenti|stop|hentikan)\b.{0,20}\b(monitor|pa
 _MONITOR_RE = re.compile(r"\b(mulai\s+)?(monitor|pantau|memantau)\b", re.IGNORECASE)
 _REPLACE_RE = re.compile(r"\b(ganti|ubah|replace)\b.{0,15}\b(akun|monitoring|target)\b", re.IGNORECASE)
 _COMPARE_RE = re.compile(r"\b(bandingkan|compare)\b", re.IGNORECASE)
-_SCRAPE_RE = re.compile(r"\b(cari|scrape|ambil|refresh)\b", re.IGNORECASE)
+
+# Matches an account referenced WITHOUT "@" — e.g. "akun instagram id.easylegal",
+# "akun id.easylegal di tiktok", "profil instagram id.easylegal". Chat messages asking
+# about a specific profile very often skip the "@" and any cari/scrape verb entirely
+# ("saya mau riset soal akun instagram id.easylegal"), so this is how parse_deterministic
+# identifies a target account when no "@mention" is present.
+_PLATFORM_WORD = r"(?:instagram|ig|tiktok)"
+_BARE_ACCOUNT_PATTERNS = [
+    re.compile(
+        rf"\bakun\s+(?:di\s+)?(?P<platform>{_PLATFORM_WORD})\s+@?(?P<username>[a-zA-Z0-9_.]{{2,30}})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\bakun\s+@?(?P<username>[a-zA-Z0-9_.]{{2,30}})\s+(?:di\s+)?(?P<platform>{_PLATFORM_WORD})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\bprofil(?:e)?\s+(?:di\s+)?(?P<platform>{_PLATFORM_WORD})\s+@?(?P<username>[a-zA-Z0-9_.]{{2,30}})\b",
+        re.IGNORECASE,
+    ),
+]
+_BARE_ACCOUNT_USERNAME_BLOCKLIST = {
+    "kami", "saya", "kita", "anda", "kalian", "milik", "punya", "kami", "ini", "itu",
+    "baru", "lama", "yang", "tersebut", "sendiri", "brand", "kompetitor",
+}
 
 _REPLACE_STOP_WORDS = {
     "ganti", "akun", "ubah", "replace", "menjadi", "jadi", "dengan", "ke", "monitoring",
@@ -150,7 +174,9 @@ _REPLACE_STOP_WORDS = {
 
 _ACTION_INTENT_RE = re.compile(
     r"@|\bmonitor\b|\bpantau\b|\bganti akun\b|\bganti monitoring\b|\bstop monitoring\b|"
-    r"\bberhenti monitor\b|\bbandingkan akun\b|\bcompare akun\b|\bscrape akun\b|\bscrape profil\b",
+    r"\bberhenti monitor\b|\bbandingkan akun\b|\bcompare akun\b|\bscrape akun\b|\bscrape profil\b|"
+    rf"\bakun\s+(?:di\s+)?{_PLATFORM_WORD}\b|\bakun\s+\S+\s+(?:di\s+)?{_PLATFORM_WORD}\b|"
+    rf"\bprofil(?:e)?\s+(?:di\s+)?{_PLATFORM_WORD}\b",
     re.IGNORECASE,
 )
 
@@ -190,6 +216,23 @@ def _infer_platform(db: Database, username: str, msg_lower: str) -> str:
         if db.get_account_by_username(plat, username):
             return plat
     return "instagram"
+
+
+def _extract_bare_account_mention(message: str) -> Optional[Tuple[str, str]]:
+    """Extracts (username, platform) from phrasing like "akun instagram id.easylegal"
+    or "akun id.easylegal di tiktok" — no "@" required. Rejects common pronouns/filler
+    words as a username since, unlike an "@mention", this path has no sigil to anchor
+    on and could otherwise misfire on phrases like "akun kami di instagram"."""
+    for pat in _BARE_ACCOUNT_PATTERNS:
+        m = pat.search(message)
+        if not m:
+            continue
+        username = m.group("username").lower().strip(".")
+        platform_word = m.group("platform").lower()
+        platform = "instagram" if platform_word in ("instagram", "ig") else "tiktok"
+        if username and username not in _BARE_ACCOUNT_USERNAME_BLOCKLIST:
+            return username, platform
+    return None
 
 
 def _resolve_brand_account(db: Database, message: str) -> Optional[Account]:
@@ -284,10 +327,20 @@ def parse_deterministic(db: Database, message: str) -> Optional[ActionPlan]:
             targets=targets, max_posts=max_posts, force_refresh=force_refresh,
         )])
 
-    # 5. Scrape a specific profile
-    if _SCRAPE_RE.search(msg_lower) and mentions:
+    # 5. Scrape a specific profile — naming an account (via "@mention" or the bare
+    # "akun <platform> <name>" phrasing) is itself unambiguous "tell me about this
+    # profile" intent; no cari/scrape/riset verb is required on top of it.
+    username = None
+    platform = None
+    if mentions:
         username = mentions[0]
         platform = _infer_platform(db, username, msg_lower)
+    else:
+        bare = _extract_bare_account_mention(message)
+        if bare:
+            username, platform = bare
+
+    if username:
         max_posts = _extract_max_posts(message)
         force_refresh = _extract_force_refresh(message)
         return ActionPlan(actions=[ScrapeProfileAction(
