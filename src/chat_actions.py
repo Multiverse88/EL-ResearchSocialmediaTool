@@ -111,6 +111,7 @@ class ActionReceipt:
 class ActionExecutionResult:
     receipts: List[ActionReceipt] = field(default_factory=list)
     matched_topic: Optional[str] = None
+    matched_account: Optional[Tuple[str, str]] = None  # (platform, username)
     clarification: Optional[str] = None
     context_text: str = ""
     status_lines: List[str] = field(default_factory=list)
@@ -722,25 +723,33 @@ class ChatActionOrchestrator:
 
         receipts: List[ActionReceipt] = []
         matched_topic: Optional[str] = None
+        matched_account: Optional[Tuple[str, str]] = None
         for action in plan.actions:
             action_type = getattr(action, "type", None)
             if action_type == "scrape_profile":
-                receipts.append(_execute_scrape_profile(db, action, self.ttl_hours))
+                receipt = _execute_scrape_profile(db, action, self.ttl_hours)
+                receipts.append(receipt)
+                matched_account = (receipt.platform, receipt.target)
             elif action_type == "research_topic":
                 receipts.append(_execute_research_topic(db, action, self.ttl_hours))
                 matched_topic = action.keyword
             elif action_type == "compare_profiles":
                 receipts.extend(_execute_compare_profiles(db, action, self.ttl_hours))
             elif action_type == "monitor_account":
-                receipts.append(_execute_monitor_account(db, action))
+                receipt = _execute_monitor_account(db, action)
+                receipts.append(receipt)
+                matched_account = (receipt.platform, receipt.target)
             elif action_type == "replace_monitored_account":
-                receipts.append(_execute_replace_monitored_account(db, action))
+                receipt = _execute_replace_monitored_account(db, action)
+                receipts.append(receipt)
+                matched_account = (receipt.platform, receipt.target)
             elif action_type == "stop_monitoring":
                 receipts.append(_execute_stop_monitoring(db, action))
 
         return ActionExecutionResult(
             receipts=receipts,
             matched_topic=matched_topic,
+            matched_account=matched_account,
             context_text=_render_context(receipts),
             status_lines=[r.detail for r in receipts],
         )

@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import anthropic
 import httpx
@@ -24,6 +24,7 @@ Panduan:
 4. Jawab dalam Bahasa Indonesia yang profesional, ramah, dan solutif untuk tim marketing.
 5. Tulis jawaban dalam paragraf atau bullet Markdown yang mengalir natural. JANGAN PERNAH memakai notasi internal/scratchpad seperti "[nama section] -> skipped: alasan" - itu terlihat seperti catatan debug, bukan jawaban untuk manusia.
 6. Kalau ada bagian yang diminta user tapi datanya memang tidak tersedia di database (lihat blok [KETERBATASAN DATA SAAT INI] di bawah kalau ada), sampaikan itu dalam satu-dua kalimat jujur dan natural (bukan notasi teknis), lalu tetap berikan insight terbaik dari data lain yang memang tersedia. Jangan pernah mengarang angka untuk metrik yang tidak tersedia.
+7. JANGAN PERNAH mengklaim suatu aksi backend terjadi (scraping berhasil, jumlah postingan baru ditarik, sistem berhasil mengambil data, dll) kecuali itu eksplisit tertulis di blok [AKSI YANG BARU DIJALANKAN OLEH SISTEM] atau [DATA FAKTUAL ...] di bawah. Kalau blok itu tidak ada atau tidak menyebut aksi tersebut, berarti aksi itu TIDAK terjadi — katakan itu terus terang, jangan mengarang narasi keberhasilan/kegagalan yang tidak didukung data yang diberikan.
 """
 
 SEED_TOPICS = [
@@ -345,6 +346,53 @@ class ClaudeChatHandler:
             logger.warning(f"Live scrape-on-chat failed for topic '{matched_topic}': {exc}")
             return None
 
+    def _build_account_context_text(self, db: Database, platform: str, username: str) -> Tuple[str, Dict[str, Any]]:
+        """Builds factual context grounded on a SPECIFIC account's full post history —
+        no keyword/topic filtering. Used when chat_actions resolved a specific profile
+        (scrape_profile/monitor_account/replace_monitored_account), so a message like
+        "riset soal akun instagram id.easylegal" answers from all of that account's
+        scraped posts instead of being misrouted through topic-keyword matching (which
+        previously extracted a stray word like "soal" from the sentence and silently
+        filtered the account's own posts down to whichever ones happened to contain it).
+        Returns (context_text, summary_dict) — summary_dict is {} when the account has
+        no data yet.
+        """
+        acc = db.get_account_by_username(platform, username)
+        if not acc:
+            text = f"[DATA FAKTUAL AKUN]:\nAkun @{username} [{platform.upper()}] belum memiliki data tersimpan di sistem.\n"
+            return text, {}
+
+        summary = db.get_account_summary(acc.id) or {}
+        top_posts = db.query_posts(account_id=acc.id, order_by="likes", limit=8)
+        recent_posts = db.query_posts(account_id=acc.id, order_by="posted_at", limit=5)
+
+        text = f"""
+[DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL — PROFIL AKUN @{acc.username}]:
+Platform: {acc.platform.upper()}
+Total Postingan Tersimpan (SEMUA post akun ini, TANPA filter kata kunci apa pun): {summary.get('total_posts', 0)} post
+Rata-Rata Likes per Post: {summary.get('avg_likes', 0):,} likes
+Rata-Rata Comments per Post: {summary.get('avg_comments', 0):,} comments
+Rata-Rata Views: {summary.get('avg_views', 0):,} views
+
+Postingan dengan Likes Tertinggi:
+"""
+        if top_posts:
+            for idx, p in enumerate(top_posts, 1):
+                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
+                text += f"{idx}. \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
+        else:
+            text += "(Belum ada postingan tersimpan untuk akun ini.)\n"
+
+        text += "\nPostingan Terbaru:\n"
+        if recent_posts:
+            for idx, p in enumerate(recent_posts, 1):
+                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
+                text += f"{idx}. \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
+        else:
+            text += "(Belum ada postingan tersimpan untuk akun ini.)\n"
+
+        return text, summary
+
     def _build_router_context(
         self,
         db: Database,
@@ -352,23 +400,35 @@ class ClaudeChatHandler:
         history: List[Dict[str, Any]],
         matched_topic: Optional[str] = None,
         action_context_text: str = "",
+        account_ref: Optional[Tuple[str, str]] = None,
     ):
         """
         Resolves topic (unless already provided by the caller), live-scrapes it if stale,
         pulls factual DB context, and builds the router request payload.
+
+        When `account_ref` is set (a chat_actions profile-level action resolved a
+        specific account), context is grounded on that account's full post history
+        instead — topic-keyword resolution never runs, so an unrelated word extracted
+        from the sentence can't silently filter the account's own data.
         """
-        if matched_topic is None:
-            matched_topic = self._resolve_matched_topic(db, user_message, history)
-            self._ensure_topic_freshness(db, matched_topic)
+        if account_ref is not None:
+            platform, username = account_ref
+            context_text, account_summary = self._build_account_context_text(db, platform, username)
+            subject_data: Dict[str, Any] = {"platform": platform, "username": username, **account_summary}
+            subject_label = f"akun @{username}"
+        else:
+            if matched_topic is None:
+                matched_topic = self._resolve_matched_topic(db, user_message, history)
+                self._ensure_topic_freshness(db, matched_topic)
 
-        # Pull real data from database for this topic to inject as factual context
-        topic_data = db.get_topic_summary(matched_topic)
-        viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=8)
-        ig_summary = db.get_topic_summary(matched_topic, platform="instagram")
-        tt_summary = db.get_topic_summary(matched_topic, platform="tiktok")
-        account_breakdown = db.get_topic_account_breakdown(matched_topic, limit=8)
+            # Pull real data from database for this topic to inject as factual context
+            topic_data = db.get_topic_summary(matched_topic)
+            viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=8)
+            ig_summary = db.get_topic_summary(matched_topic, platform="instagram")
+            tt_summary = db.get_topic_summary(matched_topic, platform="tiktok")
+            account_breakdown = db.get_topic_account_breakdown(matched_topic, limit=8)
 
-        context_text = f"""
+            context_text = f"""
 [DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL]:
 Topik / Kata Kunci: '{matched_topic}'
 Total Postingan Termonitor (semua platform): {topic_data.get('total_posts', 0)} post
@@ -383,35 +443,41 @@ Breakdown per Platform:
 
 Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user bertanya akun mana atau minta daftar postingan):
 """
-        for idx, p in enumerate(viral_posts, 1):
-            v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
-            context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
+            for idx, p in enumerate(viral_posts, 1):
+                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "Photo post"
+                context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
 
-        context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
-        if account_breakdown:
-            for idx, a in enumerate(account_breakdown, 1):
-                context_text += (
-                    f"{idx}. @{a['username']} [{a['platform'].upper()}]: {a['post_count']} post, "
-                    f"rata-rata {a['avg_likes']:,} likes, likes tertinggi {a['max_likes']:,}\n"
-                )
-        else:
-            context_text += "(Belum ada akun yang tertangkap scraping untuk topik ini.)\n"
+            context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
+            if account_breakdown:
+                for idx, a in enumerate(account_breakdown, 1):
+                    context_text += (
+                        f"{idx}. @{a['username']} [{a['platform'].upper()}]: {a['post_count']} post, "
+                        f"rata-rata {a['avg_likes']:,} likes, likes tertinggi {a['max_likes']:,}\n"
+                    )
+            else:
+                context_text += "(Belum ada akun yang tertangkap scraping untuk topik ini.)\n"
+
+            subject_data = topic_data
+            subject_label = f"topik '{matched_topic}'"
 
         if action_context_text:
             context_text += f"\n{action_context_text}"
 
         context_text += """
 [KETERBATASAN DATA SAAT INI]:
+- URL/permalink tiap postingan TIDAK tercatat (sistem hanya mencatat metrik, bukan link).
 - Reach/impression spesifik untuk Instagram Reels TIDAK tersedia (sistem hanya mencatat likes, comments, views).
 - Follower count dan frekuensi posting per akun TIDAK tersedia (sistem hanya mencatat jumlah post & likes yang tertangkap scraping, bukan profil akun).
-Jangan mengarang angka untuk dua hal di atas jika ditanya user.
+Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 """
 
         system_instruction = (
             f"{DEFAULT_SYSTEM_PROMPT}\n\n"
-            f"Berikut data hasil scraping terkini yang relevan dengan topik '{matched_topic}':\n"
+            f"Berikut data hasil scraping terkini yang relevan dengan {subject_label}:\n"
             f"{context_text}\n"
-            f"Gunakan data faktual di atas untuk menjawab pertanyaan tim marketing secara mendalam, lengkap, dan sertakan insight atau ide taktis."
+            f"Gunakan SEMUA data faktual di atas untuk menjawab pertanyaan tim marketing secara mendalam dan lengkap — "
+            f"jangan mempersempit jawaban ke sebagian kecil data kecuali user secara eksplisit meminta kata kunci/topik tertentu. "
+            f"Sertakan insight atau ide taktis."
         )
 
         # Format 9router endpoint URL (ensure /v1/chat/completions)
@@ -438,7 +504,7 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
                 messages.append({"role": role, "content": str(content)})
         messages.append({"role": "user", "content": user_message})
 
-        return endpoint_url, headers, target_model, messages, matched_topic, topic_data
+        return endpoint_url, headers, target_model, messages, matched_topic, subject_data
 
     def _call_openai_router(
         self,
@@ -449,9 +515,11 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
     ) -> Dict[str, Any]:
         """Calls 9router / OpenAI-compatible endpoint with enriched database context (buffered, non-streaming)."""
         matched_topic = action_result.matched_topic if action_result else None
+        account_ref = action_result.matched_account if action_result else None
         action_context_text = action_result.context_text if action_result else ""
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
-            db, user_message, history, matched_topic=matched_topic, action_context_text=action_context_text,
+            db, user_message, history, matched_topic=matched_topic,
+            action_context_text=action_context_text, account_ref=account_ref,
         )
         payload = {
             "model": target_model,
@@ -503,15 +571,17 @@ Jangan mengarang angka untuk dua hal di atas jika ditanya user.
         Yields dicts: {"type": "reasoning"|"content", "text": str} or {"type": "error", "text": str}.
         """
         matched_topic = action_result.matched_topic if action_result else None
+        account_ref = action_result.matched_account if action_result else None
         action_context_text = action_result.context_text if action_result else ""
-        if matched_topic is None:
+        if matched_topic is None and account_ref is None:
             matched_topic = self._resolve_matched_topic(db, user_message, history)
             freshness_status = self._ensure_topic_freshness(db, matched_topic)
             if freshness_status:
                 yield {"type": "reasoning", "text": freshness_status}
 
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
-            db, user_message, history, matched_topic=matched_topic, action_context_text=action_context_text,
+            db, user_message, history, matched_topic=matched_topic,
+            action_context_text=action_context_text, account_ref=account_ref,
         )
         payload = {
             "model": target_model,

@@ -118,22 +118,45 @@ class TestChatActionEndToEnd(unittest.TestCase):
         self.assertIsNone(db.get_account_by_username("instagram", target_username))
 
     def test_bare_account_riset_message_through_chat_endpoint(self):
-        # Exact class of message from the production incident screenshot: "saya mau
-        # riset soal akun instagram id.easylegal" — no "@", no cari/scrape verb.
+        # Exact class of message from the production incident: "saya mau riset soal
+        # akun instagram X" — no "@", no cari/scrape verb. Mocks at the run_actor_sync
+        # boundary (not the whole scrape function) so the real ingestion pipeline runs,
+        # giving a ground-truth post count in the database — not just a mocked receipt
+        # number that could mask a hallucinated/unverified claim.
         username = f"e2e_bare_account_{self.suffix}"
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(4, None, "apify")) as mock_scrape:
+        fake_items = [
+            {
+                "shortCode": f"SC{i}",
+                "id": str(1000 + i),
+                "caption": f"post nomor {i} tentang legalitas usaha",
+                "displayUrl": "https://cdn.example/p.jpg",
+                "likesCount": 10 + i,
+                "commentsCount": i,
+                "videoViewCount": None,
+                "timestamp": "2026-03-01T10:00:00.000Z",
+            }
+            for i in range(30)
+        ]
+        with patch.object(ig_module, "run_actor_sync", return_value=fake_items), \
+             patch.object(ig_module, "is_apify_configured", return_value=True):
             res = self.client.post(
                 "/chat",
                 json={"message": f"saya mau riset soal akun instagram {username}"},
             )
         self.assertEqual(res.status_code, 200)
-        mock_scrape.assert_called_once()
         data = res.json()
         self.assertEqual(len(data["action_receipts"]), 1)
-        self.assertTrue(data["action_receipts"][0]["success"])
+        receipt = data["action_receipts"][0]
+        self.assertTrue(receipt["success"])
+        self.assertEqual(receipt["backend"], "apify")
+        self.assertEqual(receipt["posts_collected"], 30)
 
         db = get_db()
-        self.assertIsNotNone(db.get_account_by_username("instagram", username))
+        acc = db.get_account_by_username("instagram", username)
+        self.assertIsNotNone(acc)
+        # Ground truth: all 30 posts are actually in the database, not filtered down to
+        # whichever ones happen to contain a stray word like "soal".
+        self.assertEqual(len(db.query_posts(account_id=acc.id, limit=50)), 30)
 
 
 if __name__ == "__main__":
