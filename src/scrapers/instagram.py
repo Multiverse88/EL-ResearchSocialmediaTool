@@ -188,8 +188,12 @@ def scrape_instagram_profile(
     Scrapes public posts from an Instagram profile and saves them to the database.
     Uses Apify (apify/instagram-scraper) when APIFY_API_TOKEN is configured — reliable,
     runs on Apify's own residential proxies, not blockable from this VPS's IP.
-    Falls back to free anonymous Instaloader scraping otherwise.
+    Falls back to Instaloader (with INSTAGRAM_USERNAME/PASSWORD if set) when Apify
+    is unconfigured or fails (e.g. quota exhausted).
     """
     if is_apify_configured():
-        return _scrape_instagram_profile_apify(db, account, max_posts)
+        count, err = _scrape_instagram_profile_apify(db, account, max_posts)
+        if not err:
+            return count, None
+        logger.warning(f"Apify failed, falling back to Instaloader: {err}")
     return _scrape_instagram_profile_instaloader(db, account, max_posts, delay_between_requests)
