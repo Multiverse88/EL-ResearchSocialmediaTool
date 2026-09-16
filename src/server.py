@@ -409,11 +409,21 @@ def chat_endpoint(payload: ChatRequest):
     if not user_msg:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    result = get_claude_handler().process_chat(
-        db=get_db(),
-        message=user_msg,
-        conversation_history=payload.messages[:-1] if payload.messages else None,
-    )
+    try:
+        result = get_claude_handler().process_chat(
+            db=get_db(),
+            message=user_msg,
+            conversation_history=payload.messages[:-1] if payload.messages else None,
+        )
+    except Exception as exc:
+        # Chat is user-facing: an unhandled exception anywhere in the answer pipeline
+        # must never surface as a raw 500 — always give the user a usable response.
+        logger.error(f"Unhandled error in /chat for message {user_msg!r}: {exc}", exc_info=True)
+        result = {
+            "status": "error",
+            "user_query": user_msg,
+            "reply": "Maaf, terjadi kesalahan internal saat memproses permintaan Anda. Silakan coba lagi.",
+        }
     return result
 
 
@@ -470,7 +480,11 @@ def openai_compatible_chat(payload: ChatRequest):
     handler = get_claude_handler()
 
     if payload.stream is False:
-        result = handler.process_chat(db=db_inst, message=str(user_msg), conversation_history=history)
+        try:
+            result = handler.process_chat(db=db_inst, message=str(user_msg), conversation_history=history)
+        except Exception as exc:
+            logger.error(f"Unhandled error in buffered /v1/chat/completions for message {user_msg!r}: {exc}", exc_info=True)
+            result = {"reply": "Maaf, terjadi kesalahan internal saat memproses permintaan Anda. Silakan coba lagi."}
         reply_content = result.get("reply", "")
         return {
             "id": f"chatcmpl-{int(time.time())}",

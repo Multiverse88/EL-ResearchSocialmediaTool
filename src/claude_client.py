@@ -139,10 +139,19 @@ class ClaudeChatHandler:
         """Runs the deterministic parser first, then (only for messages that show some
         sign of action intent it didn't already resolve) consults the AI planner via the
         router. Returns an `ActionExecutionResult` — empty when nothing action-like was
-        found, so ordinary research questions are entirely unaffected."""
-        from .chat_actions import ChatActionOrchestrator
-        planner = self._plan_actions_via_router if (is_openai_router and self.api_key) else None
-        return ChatActionOrchestrator().plan_and_execute(db, message, history, planner=planner)
+        found, so ordinary research questions are entirely unaffected.
+
+        Action execution (Apify calls, DB mutations) is best-effort: any failure here
+        must degrade to "no action taken", never crash the primary chat/research path.
+        A bug in one action executor should not take down basic research questions.
+        """
+        from .chat_actions import ChatActionOrchestrator, ActionExecutionResult
+        try:
+            planner = self._plan_actions_via_router if (is_openai_router and self.api_key) else None
+            return ChatActionOrchestrator().plan_and_execute(db, message, history, planner=planner)
+        except Exception as exc:
+            logger.error(f"Chat action orchestration failed unexpectedly for message {message!r}: {exc}", exc_info=True)
+            return ActionExecutionResult()
 
     def _plan_actions_via_router(self, message: str, history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """AI planner: asks the router for a strict JSON action plan (no tool-use loop,
