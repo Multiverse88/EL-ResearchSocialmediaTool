@@ -71,13 +71,17 @@ def _scrape_instagram_profile_apify(
         for item in items:
             if item.get("error") or not (item.get("shortCode") or item.get("id")):
                 continue
+            # Apify's Instagram actor returns likesCount/commentsCount as -1 (not None)
+            # when the count is hidden/unavailable, not zero. `-1 or 0` is a no-op in
+            # Python since -1 is truthy, so the sentinel was silently stored as a real
+            # negative like count, corrupting averages and viral-post rankings.
             raw_posts.append({
                 "shortcode": item.get("shortCode") or item.get("id"),
                 "id": str(item.get("id") or item.get("shortCode")),
                 "caption": item.get("caption") or "",
                 "display_url": item.get("displayUrl") or "",
-                "likes": item.get("likesCount") or 0,
-                "comments": item.get("commentsCount") or 0,
+                "likes": max(0, item.get("likesCount") or 0),
+                "comments": max(0, item.get("commentsCount") or 0),
                 "video_view_count": item.get("videoViewCount"),
                 "date_utc": item.get("timestamp"),
             })

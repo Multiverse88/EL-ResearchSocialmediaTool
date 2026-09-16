@@ -51,7 +51,11 @@ def run_actor_sync(
                 f"Apify actor {actor_id} exceeded the 300s sync timeout. "
                 "Reduce resultsLimit/maxProfileVideos or run asynchronously."
             )
-        if resp.status_code != 200:
+        # Apify's run-sync-get-dataset-items endpoint returns 200 in most cases but 201
+        # when the run completes synchronously as a newly-created resource — both are
+        # success. Treating 201 as a failure here silently discarded valid scrape
+        # results and fell back to the free scrapers, which is far more error-prone.
+        if not (200 <= resp.status_code < 300):
             raise RuntimeError(f"Apify actor {actor_id} failed: HTTP {resp.status_code} - {resp.text[:300]}")
         items = resp.json()
         if not isinstance(items, list):

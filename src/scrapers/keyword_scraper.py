@@ -71,8 +71,10 @@ def _scrape_instagram_hashtag_apify(
                 platform_post_id=str(item.get("shortCode") or item.get("id")),
                 caption=item.get("caption") or "",
                 media_url=item.get("displayUrl") or "",
-                likes=item.get("likesCount") or 0,
-                comments=item.get("commentsCount") or 0,
+                # Apify's Instagram actor returns -1 (not None) for hidden/unavailable
+                # like/comment counts — clamp so it never stores a negative metric.
+                likes=max(0, item.get("likesCount") or 0),
+                comments=max(0, item.get("commentsCount") or 0),
                 views=item.get("videoViewCount"),
                 posted_at=item.get("timestamp"),
                 platform="instagram",

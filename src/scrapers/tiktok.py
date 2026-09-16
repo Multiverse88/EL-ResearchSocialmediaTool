@@ -69,9 +69,12 @@ def _apify_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "playAddr": video_meta.get("playAddr") or "",
         },
         "stats": {
-            "diggCount": item.get("diggCount") or 0,
-            "commentCount": item.get("commentCount") or 0,
-            "playCount": item.get("playCount") or 0,
+            # Defensively clamp: engagement counts must never be negative regardless of
+            # source quirks (Instagram's Apify actor uses -1 as a hidden-count sentinel;
+            # guard TikTok's mapping the same way rather than assume it can't happen).
+            "diggCount": max(0, item.get("diggCount") or 0),
+            "commentCount": max(0, item.get("commentCount") or 0),
+            "playCount": max(0, item.get("playCount") or 0),
         },
         "createTime": item.get("createTime") or int(time.time()),
     }

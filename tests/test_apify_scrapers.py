@@ -67,6 +67,26 @@ class TestApifyClient(unittest.TestCase):
             items = run_actor_sync("apify~instagram-scraper", {"foo": "bar"})
             self.assertEqual(items, [{"id": "1"}])
 
+    def test_run_actor_sync_accepts_201_created_as_success(self):
+        # Regression test for a real production incident: Apify's
+        # run-sync-get-dataset-items endpoint returns HTTP 201 (not 200) on a
+        # synchronously-completed run. The old strict "== 200" check treated this as a
+        # failure and silently discarded valid scrape results, falling back to the
+        # free/rate-limited scrapers even though Apify had actually succeeded.
+        os.environ["APIFY_API_TOKEN"] = "fake-token"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = [{"id": "1", "caption": "real post"}]
+
+        with patch("src.scrapers.apify_client.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__.return_value = mock_client
+            mock_client.post.return_value = mock_resp
+            mock_client_cls.return_value = mock_client
+
+            items = run_actor_sync("apify~instagram-scraper", {"foo": "bar"})
+            self.assertEqual(items, [{"id": "1", "caption": "real post"}])
+
     def test_run_actor_sync_raises_on_error_status(self):
         os.environ["APIFY_API_TOKEN"] = "fake-token"
         mock_resp = MagicMock()
@@ -95,6 +115,12 @@ class TestTikTokAdapter(unittest.TestCase):
 
     def test_apify_item_to_raw_post_skips_items_without_id(self):
         self.assertIsNone(_apify_item_to_raw_post({"text": "no id here"}))
+
+    def test_apify_item_to_raw_post_clamps_negative_stats(self):
+        raw = _apify_item_to_raw_post({"id": "1", "diggCount": -1, "commentCount": -1, "playCount": -1})
+        self.assertEqual(raw["stats"]["diggCount"], 0)
+        self.assertEqual(raw["stats"]["commentCount"], 0)
+        self.assertEqual(raw["stats"]["playCount"], 0)
 
 
 class TestApifyProfileScraping(unittest.TestCase):
@@ -171,6 +197,31 @@ class TestApifyProfileScraping(unittest.TestCase):
         self.assertEqual(backend, "instaloader")
         self.assertIn("quota exceeded", err)
         self.assertIn("rate limit (429)", err)
+
+    def test_apify_hidden_like_count_sentinel_clamped_to_zero(self):
+        # Regression test for a real production incident: Apify's Instagram actor
+        # returns likesCount=-1 (not None/0) when the like count is hidden. `-1 or 0`
+        # is a no-op in Python (-1 is truthy), so this sentinel was stored as a real
+        # negative like count, corrupting averages and "most viral" rankings.
+        acc = self.db.upsert_account(Account.create(platform="instagram", username="hidden_likes_test", is_own_brand=True))
+        hidden_like_item = {
+            "shortCode": "XYZ999",
+            "id": "111222333",
+            "caption": "post with hidden like count",
+            "displayUrl": "https://cdn.example/hidden.jpg",
+            "likesCount": -1,
+            "commentsCount": -1,
+            "videoViewCount": None,
+            "timestamp": "2026-03-01T10:00:00.000Z",
+        }
+        with patch.object(ig_module, "run_actor_sync", return_value=[hidden_like_item]):
+            count, err, backend = ig_module.scrape_instagram_profile(self.db, acc, max_posts=5)
+
+        self.assertIsNone(err)
+        self.assertEqual(count, 1)
+        posts = self.db.query_posts(account_id=acc.id)
+        self.assertEqual(posts[0]["likes"], 0)
+        self.assertEqual(posts[0]["comments"], 0)
 
 
 class TestApifyHashtagScraping(unittest.TestCase):
