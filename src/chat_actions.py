@@ -518,9 +518,9 @@ def validate_and_normalize(plan: ActionPlan) -> Tuple[ActionPlan, List[str]]:
 
 def default_ttl_hours() -> float:
     try:
-        return float(os.getenv("TOPIC_STALENESS_HOURS", "6"))
+        return float(os.getenv("TOPIC_STALENESS_HOURS", "24"))
     except ValueError:
-        return 6.0
+        return 24.0
 
 
 def _age_from_timestamp(timestamp: Optional[str]) -> Optional[float]:

@@ -196,7 +196,7 @@ def main():
     parser.add_argument(
         "--staleness-hours",
         type=float,
-        default=float(os.getenv("TOPIC_STALENESS_HOURS", 6)),
+        default=float(os.getenv("TOPIC_STALENESS_HOURS", 24)),
         help="Re-scrape topics whose last scrape is older than this",
     )
     args = parser.parse_args()

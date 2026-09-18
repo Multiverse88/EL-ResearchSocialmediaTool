@@ -17,7 +17,7 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
   - 100% web-based, diakses langsung via browser tanpa install aplikasi desktop.
   - Didukung oleh model Claude API (`claude-3-5-sonnet`) dengan integrasi native **Tool Use**.
   - Auto-discovery model via endpoint `/v1/models` dan `/v1/chat/completions`.
-- **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 6 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
+- **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 24 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
 - **Chat-to-Scraper Action**: chat bisa langsung dipakai untuk mengelola monitoring dan menjalankan scrape via Bright Data — bukan cuma bertanya. Contoh perintah: *"Cari 20 post terbaru @kompetitor_a"*, *"Mulai monitor @id.easylegal"*, *"Ganti akun EasyLegal jadi @id.easylegal"*, *"Berhenti monitor @legalku"*, *"Bandingkan @id.easylegal dengan @legalku"*. Pesan diterjemahkan lewat parser deterministik untuk perintah eksplisit, dengan AI planner (JSON terstruktur via router) sebagai fallback untuk kalimat yang lebih natural. Lihat `src/chat_actions.py`.
 - **Claude API Tools**:
   - `search_scraped_posts`: Pencarian post berdasarkan kata kunci, tanggal, platform, username.

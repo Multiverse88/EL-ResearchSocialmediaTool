@@ -363,9 +363,9 @@ class ClaudeChatHandler:
             return None
 
         try:
-            staleness_hours = float(os.getenv("TOPIC_STALENESS_HOURS", "6"))
+            staleness_hours = float(os.getenv("TOPIC_STALENESS_HOURS", "24"))
         except ValueError:
-            staleness_hours = 6.0
+            staleness_hours = 24.0
 
         needs_scrape = True
         last_scraped = db.get_topic_last_scraped(matched_topic)
