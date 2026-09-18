@@ -216,7 +216,12 @@ def _infer_platform(db: Database, username: str, msg_lower: str) -> str:
         return "threads"
     if "instagram" in msg_lower or re.search(r"\big\b", msg_lower):
         return "instagram"
-    for plat in SUPPORTED_PLATFORMS:
+    norm_user = username.lower().strip().lstrip("@")
+    if norm_user.startswith("id."):
+        return "instagram"
+    if norm_user.endswith("_tiktok"):
+        return "tiktok"
+    for plat in ("instagram", "tiktok", "threads"):
         if db.get_account_by_username(plat, username):
             return plat
     return "instagram"
@@ -264,21 +269,21 @@ def resolve_account_reference(db: Database, message: str) -> Optional[Tuple[str,
 
 def _extract_known_account_mentions(db: Database, message: str) -> List[Tuple[str, str]]:
     """Finds account usernames from `message` that are already registered in the DB —
-    no "@" or platform word required. A bare mention of an already-known account
-    ("riset akun id.easytax dan id.easyoffice", no "@", no "instagram"/"tiktok" word) is
-    unambiguous account-reference intent, unlike an arbitrary word: it only matches exact
-    usernames that genuinely exist as registered accounts, so it can't misfire on random
-    text the way a bare-word heuristic without that anchor would.
+    no "@" or platform word required. Resolves platform using `_infer_platform` so
+    handles like `id.easytax` or `id.easyoffice` correctly target Instagram even if an
+    old TikTok entry exists in the database.
     """
     tokens = set(re.findall(r"[a-zA-Z0-9_.]+", message.lower()))
     if not tokens:
         return []
+    msg_lower = message.lower()
     found: List[Tuple[str, str]] = []
     seen = set()
     for acc in db.list_accounts():
         candidate = acc.username.lower().lstrip("@")
         if candidate in tokens and candidate not in seen:
-            found.append((acc.platform, acc.username))
+            platform = _infer_platform(db, candidate, msg_lower)
+            found.append((platform, candidate))
             seen.add(candidate)
     return found
 
@@ -609,7 +614,20 @@ def _run_profile_scrape(
     if progress_callback:
         progress_callback(f"Mengambil video TikTok @{account.username}…")
     from .scrapers.tiktok import scrape_tiktok_profile
-    return scrape_tiktok_profile(db, account, max_posts=max_posts)
+    count, err, backend = scrape_tiktok_profile(db, account, max_posts=max_posts)
+    # Resilient fallback: if TikTok returns 0 posts / fails, and handle is an EasyCorp id.* handle,
+    # automatically try Instagram before giving up!
+    if (count == 0 or err) and account.username.startswith("id."):
+        logger.info(
+            "TikTok scrape for @%s yielded no posts (%s). Automatically trying Instagram fallback...",
+            account.username, err,
+        )
+        from .scrapers.instagram import scrape_instagram_profile
+        ig_acc = _get_or_create_account(db, "instagram", account.username, monitoring_enabled=False)
+        if progress_callback is not None:
+            return scrape_instagram_profile(db, ig_acc, max_posts=max_posts, progress_callback=progress_callback)
+        return scrape_instagram_profile(db, ig_acc, max_posts=max_posts)
+    return count, err, backend
 
 
 def _execute_scrape_profile(

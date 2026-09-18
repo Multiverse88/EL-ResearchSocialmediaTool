@@ -335,6 +335,46 @@ class TestBareKnownAccountMention(unittest.TestCase):
             self.orch.plan_and_execute(self.db, "coba riset tentang topik legalitas umkm", [])
         mock_scrape.assert_not_called()
 
+    def test_prefers_instagram_for_id_handles_even_if_tiktok_account_exists_in_db(self):
+        # Simulate collision: id.easytax registered on tiktok first
+        self.db.upsert_account(Account.create(platform="tiktok", username="id.easytax", is_own_brand=True))
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(5, None, "bright_data")) as mock_ig, \
+             patch.object(tt_module, "scrape_tiktok_profile") as mock_tt:
+            result = self.orch.plan_and_execute(self.db, "coba riset tentang akun id.easytax", [])
+
+        # Must have routed to Instagram, NOT TikTok
+        mock_ig.assert_called_once()
+        mock_tt.assert_not_called()
+        self.assertEqual(result.receipts[0].platform, "instagram")
+
+    def test_tiktok_zero_posts_falls_back_to_instagram_for_id_handles(self):
+        from src.chat_actions import _run_profile_scrape
+        # Explicitly pass a TikTok account object with an id.* handle
+        tt_acc = Account.create(platform="tiktok", username="id.easytax", is_own_brand=True)
+        with patch.object(tt_module, "scrape_tiktok_profile", return_value=(0, "no videos", "bright_data")) as mock_tt, \
+             patch.object(ig_module, "scrape_instagram_profile", return_value=(47, None, "bright_data")) as mock_ig:
+            count, err, backend = _run_profile_scrape(self.db, tt_acc, max_posts=10)
+
+        mock_tt.assert_called_once()
+        # Must have fallen back to Instagram automatically
+        mock_ig.assert_called_once()
+        self.assertEqual(count, 47)
+        self.assertIsNone(err)
+
+    def test_seed_default_accounts_adds_missing_to_populated_db(self):
+        from src.scrapers.runner import seed_default_accounts_if_empty
+        fresh_db = Database(":memory:")
+        # Simulate existing DB with just one unrelated account
+        fresh_db.upsert_account(Account.create(platform="instagram", username="random_account"))
+        self.assertEqual(len(fresh_db.list_accounts()), 1)
+
+        # Run seeder
+        seed_default_accounts_if_empty(fresh_db)
+        # Must have inserted all missing seeds (id.easylegal, id.easytax, id.easyoffice, etc.)
+        self.assertIsNotNone(fresh_db.get_account_by_username("instagram", "id.easytax"))
+        self.assertIsNotNone(fresh_db.get_account_by_username("instagram", "id.easyoffice"))
+        self.assertIsNotNone(fresh_db.get_account_by_username("instagram", "id.easylegal"))
+        fresh_db.close()
 
 if __name__ == "__main__":
     unittest.main()

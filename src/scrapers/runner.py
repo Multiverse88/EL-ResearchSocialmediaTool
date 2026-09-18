@@ -19,29 +19,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger("scrapers.runner")
 
-# Default seed accounts if DB has no accounts yet
+# Default brand accounts of EasyCorp to ensure exist on startup
 DEFAULT_SEEDS = [
-    ("instagram", "easylegal_id", True),
+    ("instagram", "id.easylegal", True),
     ("tiktok", "easylegal_tiktok", True),
-    ("instagram", "easytax_id", True),
+    ("instagram", "id.easytax", True),
     ("tiktok", "easytax_tiktok", True),
+    ("instagram", "id.easyoffice", True),
+    ("instagram", "easylegal_id", True),
+    ("instagram", "easytax_id", True),
     ("instagram", "easyoffice_id", True),
 ]
 
 
 def seed_default_accounts_if_empty(db: Database) -> List[Account]:
-    """Ensures at least default brand accounts exist in database."""
-    accounts = db.list_accounts()
-    if accounts:
-        return accounts
-
-    logger.info("Database has no registered accounts. Seeding initial accounts...")
+    """Ensures all default EasyCorp brand accounts exist in the database,
+    inserting any that are missing even if the database already has other accounts."""
     created = []
     for platform, username, is_own in DEFAULT_SEEDS:
-        acc = Account.create(platform=platform, username=username, is_own_brand=is_own)
-        saved = db.upsert_account(acc)
-        created.append(saved)
-    return created
+        if not db.get_account_by_username(platform, username):
+            acc = Account.create(platform=platform, username=username, is_own_brand=is_own)
+            saved = db.upsert_account(acc)
+            created.append(saved)
+    return db.list_accounts()
 
 
 def run_scraping_job(
