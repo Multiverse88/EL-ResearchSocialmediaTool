@@ -70,7 +70,7 @@ class TestChatActionEndToEnd(unittest.TestCase):
 
     def test_scrape_command_through_chat_endpoint_persists_posts(self):
         username = f"e2e_scrape_target_{self.suffix}"
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(2, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(2, None, "bright_data")) as mock_scrape:
             res = self.client.post(
                 "/chat", json={"message": f"Cari 15 post terbaru @{username}"},
             )
@@ -92,7 +92,7 @@ class TestChatActionEndToEnd(unittest.TestCase):
         from src.models import Account
         old = db.upsert_account(Account.create(platform="instagram", username=old_username, monitoring_enabled=True))
 
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "bright_data")) as mock_scrape:
             res = self.client.post(
                 "/chat",
                 json={"message": f"Ganti akun @{old_username} menjadi @{new_username}"},
@@ -119,26 +119,26 @@ class TestChatActionEndToEnd(unittest.TestCase):
 
     def test_bare_account_riset_message_through_chat_endpoint(self):
         # Exact class of message from the production incident: "saya mau riset soal
-        # akun instagram X" — no "@", no cari/scrape verb. Mocks at the run_actor_sync
+        # akun instagram X" — no "@", no cari/scrape verb. Mocks at the provider dataset
         # boundary (not the whole scrape function) so the real ingestion pipeline runs,
         # giving a ground-truth post count in the database — not just a mocked receipt
         # number that could mask a hallucinated/unverified claim.
         username = f"e2e_bare_account_{self.suffix}"
         fake_items = [
             {
-                "shortCode": f"SC{i}",
-                "id": str(1000 + i),
-                "caption": f"post nomor {i} tentang legalitas usaha",
-                "displayUrl": "https://cdn.example/p.jpg",
-                "likesCount": 10 + i,
-                "commentsCount": i,
-                "videoViewCount": None,
-                "timestamp": "2026-03-01T10:00:00.000Z",
+                "shortcode": f"SC{i}",
+                "post_id": str(1000 + i),
+                "description": f"post nomor {i} tentang legalitas usaha",
+                "image_url": "https://cdn.example/p.jpg",
+                "likes": 10 + i,
+                "num_comments": i,
+                "video_play_count": None,
+                "date_posted": "2026-03-01T10:00:00.000Z",
             }
             for i in range(30)
         ]
-        with patch.object(ig_module, "run_actor_sync", return_value=fake_items), \
-             patch.object(ig_module, "is_apify_configured", return_value=True):
+        with patch.object(ig_module, "run_dataset", return_value=fake_items), \
+             patch.object(ig_module, "is_bright_data_configured", return_value=True):
             res = self.client.post(
                 "/chat",
                 json={"message": f"saya mau riset soal akun instagram {username}"},
@@ -148,7 +148,7 @@ class TestChatActionEndToEnd(unittest.TestCase):
         self.assertEqual(len(data["action_receipts"]), 1)
         receipt = data["action_receipts"][0]
         self.assertTrue(receipt["success"])
-        self.assertEqual(receipt["backend"], "apify")
+        self.assertEqual(receipt["backend"], "bright_data")
         self.assertEqual(receipt["posts_collected"], 30)
 
         db = get_db()

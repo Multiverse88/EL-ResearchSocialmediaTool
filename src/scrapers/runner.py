@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -125,22 +126,97 @@ def run_scraping_job(
     return summary
 
 
+def refresh_stale_topics(
+    db: Database,
+    staleness_hours: float = 6.0,
+    max_posts_per_platform: int = 20,
+) -> Dict[str, Any]:
+    """
+    Background refresh: re-scrapes registered topics whose last successful
+    `topic_scrapes` audit entry is older than `staleness_hours`. Intended to run
+    from cron (e.g. every 6 hours) so chat questions hit fresh data without
+    paying scrape latency on the request path.
+    """
+    from datetime import datetime, timezone
+    from .keyword_scraper import scrape_topic_content
+
+    now = datetime.now(timezone.utc)
+    refreshed = 0
+    failed = 0
+    skipped = 0
+    results: List[Dict[str, Any]] = []
+
+    for topic in db.list_topics():
+        last = db.get_topic_last_scraped(topic.keyword)
+        is_stale = True
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(last)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                is_stale = (now - last_dt).total_seconds() / 3600 >= staleness_hours
+            except Exception:
+                is_stale = True
+
+        if not is_stale:
+            skipped += 1
+            continue
+
+        logger.info(f"Refreshing stale topic '{topic.keyword}' (last scrape: {last or 'never'})")
+        try:
+            result = scrape_topic_content(
+                db,
+                topic.keyword,
+                max_posts_per_platform=max_posts_per_platform,
+                since=last,
+            )
+            refreshed += 1
+            results.append({"keyword": topic.keyword, "added": result.get("total_posts_added", 0)})
+        except Exception as exc:
+            failed += 1
+            logger.warning(f"Topic refresh failed for '{topic.keyword}': {exc}")
+            results.append({"keyword": topic.keyword, "error": str(exc)})
+
+    return {
+        "status": "success",
+        "topics_refreshed": refreshed,
+        "topics_skipped": skipped,
+        "topics_failed": failed,
+        "results": results,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Social Media Scraper Scheduled Job Runner")
     parser.add_argument("--db", type=str, default=os.getenv("DATABASE_PATH", "social_media.db"), help="Database path")
     parser.add_argument("--platform", type=str, choices=["instagram", "tiktok"], help="Filter by platform")
     parser.add_argument("--username", type=str, help="Scrape specific username only")
     parser.add_argument("--limit", type=int, default=int(os.getenv("MAX_POSTS_PER_SCRAPE", 30)), help="Max posts per account")
+    parser.add_argument("--topics", action="store_true", help="Refresh stale registered topics instead of accounts")
+    parser.add_argument(
+        "--staleness-hours",
+        type=float,
+        default=float(os.getenv("TOPIC_STALENESS_HOURS", 6)),
+        help="Re-scrape topics whose last scrape is older than this",
+    )
     args = parser.parse_args()
 
     db = Database(args.db)
     try:
-        run_scraping_job(
-            db=db,
-            platform=args.platform,
-            username=args.username,
-            max_posts_per_account=args.limit,
-        )
+        if args.topics:
+            result = refresh_stale_topics(
+                db,
+                staleness_hours=args.staleness_hours,
+                max_posts_per_platform=args.limit,
+            )
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            run_scraping_job(
+                db=db,
+                platform=args.platform,
+                username=args.username,
+                max_posts_per_account=args.limit,
+            )
     finally:
         db.close()
 

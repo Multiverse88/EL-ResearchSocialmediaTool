@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
-from .models import Account, Post, ScrapeLog, Topic
+from .models import Account, Post, ScrapeLog, Topic, TopicScrape
 
 
 SCHEMA_SQL = """
@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS scrape_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scrape_logs_platform_run ON scrape_logs(platform, run_at DESC);
+CREATE TABLE IF NOT EXISTS topic_scrapes (
+    id TEXT PRIMARY KEY,
+    keyword TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    posts_found INTEGER NOT NULL DEFAULT 0,
+    scraped_at TEXT NOT NULL,
+    status TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_topic_scrapes_platform_keyword ON topic_scrapes(platform, keyword);
+CREATE INDEX IF NOT EXISTS idx_topic_scrapes_scraped_at ON topic_scrapes(scraped_at DESC);
 """
 
 SUMMARY_COLS = (
@@ -521,12 +531,42 @@ class Database:
         cursor = self.conn.execute("SELECT id, keyword, category, created_at FROM topics ORDER BY keyword ASC")
         return [Topic(id=r[0], keyword=r[1], category=r[2], created_at=r[3]) for r in cursor.fetchall()]
 
-    def get_topic_last_scraped(self, keyword: str) -> Optional[str]:
-        """Returns the most recent `scraped_at` timestamp among posts tagged with this topic, or None."""
+    def record_topic_scrape(self, scrape: TopicScrape) -> str:
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO topic_scrapes (id, keyword, platform, posts_found, scraped_at, status)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (scrape.id, scrape.keyword, scrape.platform, scrape.posts_found, scrape.scraped_at, scrape.status),
+            )
+        return scrape.id
+
+    def get_topic_last_scraped(self, keyword: str, platform: Optional[str] = None) -> Optional[str]:
+        """Returns the most recent `scraped_at` timestamp for this topic from topic_scrapes or posts."""
         clean_kw = keyword.strip().lower()
+        if platform:
+            cursor = self.conn.execute(
+                "SELECT MAX(scraped_at) FROM topic_scrapes WHERE keyword = ? AND platform = ? AND status = 'success'",
+                (clean_kw, platform.lower()),
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+
+        # Fallback to general topic_scrapes
         cursor = self.conn.execute(
-            "SELECT MAX(scraped_at) FROM posts WHERE topic = ? OR caption LIKE ?",
-            (clean_kw, f"%{clean_kw}%"),
+            "SELECT MAX(scraped_at) FROM topic_scrapes WHERE keyword = ? AND status = 'success'",
+            (clean_kw,),
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            return row[0]
+
+        # Ultimate fallback: posts table tagged explicitly with this topic
+        cursor = self.conn.execute(
+            "SELECT MAX(scraped_at) FROM posts WHERE topic = ?",
+            (clean_kw,),
         )
         row = cursor.fetchone()
         return row[0] if row and row[0] else None

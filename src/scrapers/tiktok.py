@@ -11,7 +11,11 @@ import httpx
 from ..models import Account, Post, ScrapeLog
 from ..db import Database
 from ..ingest import ingest_scraped_batch
-from .apify_client import TIKTOK_ACTOR_ID, is_apify_configured, run_actor_sync
+from .bright_data_client import (
+    TIKTOK_POSTS_DATASET_ID,
+    is_bright_data_configured,
+    run_dataset,
+)
 from .tiktokapi_client import (
     _tiktokapi_item_to_raw_post,
     fetch_user_videos,
@@ -55,57 +59,60 @@ def _extract_sigi_or_hydration_data(html: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _apify_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Adapts a clockworks/tiktok-scraper dataset item into ingest.py's expected raw_post shape."""
-    video_id = item.get("id")
+def _bright_data_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Adapts a Bright Data TikTok post record to the ingestion contract."""
+    if item.get("error"):
+        return None
+    video_id = item.get("post_id") or item.get("id") or item.get("video_id")
     if not video_id:
         return None
-    video_meta = item.get("videoMeta") or {}
     return {
         "id": str(video_id),
-        "desc": item.get("text") or "",
+        "desc": item.get("description") or item.get("caption") or item.get("text") or "",
         "video": {
-            "downloadAddr": video_meta.get("downloadAddr") or item.get("webVideoUrl") or "",
-            "playAddr": video_meta.get("playAddr") or "",
+            "downloadAddr": item.get("video_url") or item.get("web_video_url") or "",
+            "playAddr": "",
         },
         "stats": {
-            # Defensively clamp: engagement counts must never be negative regardless of
-            # source quirks (Instagram's Apify actor uses -1 as a hidden-count sentinel;
-            # guard TikTok's mapping the same way rather than assume it can't happen).
-            "diggCount": max(0, item.get("diggCount") or 0),
-            "commentCount": max(0, item.get("commentCount") or 0),
-            "playCount": max(0, item.get("playCount") or 0),
+            "diggCount": max(0, int(item.get("digg_count") or item.get("likes") or 0)),
+            "commentCount": max(0, int(item.get("comment_count") or item.get("comments") or 0)),
+            "playCount": max(0, int(item.get("play_count") or item.get("views") or 0)),
         },
-        "createTime": item.get("createTime") or int(time.time()),
+        "createTime": item.get("create_time") or item.get("created_at"),
     }
 
 
-def _scrape_tiktok_profile_apify(
+def _scrape_tiktok_profile_bright_data(
     db: Database,
     account: Account,
     max_posts: int,
 ) -> Tuple[int, Optional[str]]:
-    """Scrapes a TikTok profile via the Apify `clockworks/tiktok-scraper` actor."""
+    """Scrapes a TikTok profile through Bright Data post discovery."""
     username = account.username.strip().lstrip("@")
-    logger.info(f"Starting TikTok scrape (Apify) for @{username} (limit={max_posts})")
+    logger.info("Starting TikTok scrape (Bright Data) for @%s (limit=%s)", username, max_posts)
 
     try:
-        items = run_actor_sync(
-            TIKTOK_ACTOR_ID,
-            {
-                "profiles": [username],
-                "maxProfileVideos": max_posts,
-                "profileScrapeSections": ["videos"],
-                "profileSorting": "Latest",
-            },
+        items = run_dataset(
+            TIKTOK_POSTS_DATASET_ID,
+            [{
+                "url": f"https://www.tiktok.com/@{username}",
+                "num_of_posts": max_posts,
+            }],
+            query={"type": "discover_new", "discover_by": "profile_url"},
         )
-
-        raw_posts = [p for p in (_apify_item_to_raw_post(item) for item in items) if p is not None]
-
+        raw_posts = [
+            post for post in (_bright_data_item_to_raw_post(item) for item in items)
+            if post is not None
+        ][:max_posts]
         if not raw_posts:
-            err_msg = f"Apify TikTok scraper returned no usable videos for @{username} (profile may be private, empty, or not found)"
+            err_msg = (
+                f"Bright Data returned no usable TikTok videos for @{username} "
+                "(profile may be private, empty, or not found)"
+            )
             logger.warning(err_msg)
-            db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+            db.insert_scrape_log(
+                ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg)
+            )
             return 0, err_msg
 
         inserted_count, err = ingest_scraped_batch(
@@ -115,16 +122,20 @@ def _scrape_tiktok_profile_apify(
             raw_posts=raw_posts,
         )
         if err:
-            logger.error(f"Ingestion error for TikTok @{username}: {err}")
+            logger.error("Ingestion error for TikTok @%s: %s", username, err)
             return 0, err
-
-        logger.info(f"Successfully scraped (Apify) and stored {inserted_count} TikTok videos for @{username}")
+        logger.info(
+            "Successfully scraped (Bright Data) and stored %s TikTok videos for @%s",
+            inserted_count,
+            username,
+        )
         return inserted_count, None
-
     except Exception as exc:
-        err_msg = f"Apify TikTok scrape failed for @{username}: {str(exc)}"
+        err_msg = f"Bright Data TikTok scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+        db.insert_scrape_log(
+            ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg)
+        )
         return 0, err_msg
 
 
@@ -280,20 +291,22 @@ def scrape_tiktok_profile(
 ) -> Tuple[int, Optional[str], str]:
     """
     Scrapes public videos from a TikTok profile and saves them to the database.
-    Dispatch order:
-      1. Apify (clockworks/tiktok-scraper) when APIFY_API_TOKEN is configured — most reliable,
-         handles TikTok's anti-bot measures on Apify's own infrastructure.
-      2. TikTokApi/Playwright (free, self-hosted headless Chromium) when installed.
-      3. Raw HTML parsing (free, no extra dependency, but fragile — breaks when TikTok
-         changes page markup).
-    Returns (posts_added, error, backend) — the scraper that actually ran, never assumed
-    from configuration alone.
+    Dispatch order: Bright Data, TikTokApi/Playwright, then raw HTML.
+    Returns the backend that actually produced the result.
     """
-    if is_apify_configured():
-        count, err = _scrape_tiktok_profile_apify(db, account, max_posts)
-        return count, err, "apify"
+    bright_data_err: Optional[str] = None
+    if is_bright_data_configured():
+        count, err = _scrape_tiktok_profile_bright_data(db, account, max_posts)
+        if not err:
+            return count, None, "bright_data"
+        bright_data_err = err
+        logger.warning("Bright Data failed, falling back to local TikTok scraper: %s", err)
     if is_tiktokapi_available():
         count, err = _scrape_tiktok_profile_playwright(db, account, max_posts)
+        if err and bright_data_err:
+            err = f"Bright Data: {bright_data_err} | TikTokApi: {err}"
         return count, err, "playwright"
     count, err = _scrape_tiktok_profile_html(db, account, max_posts, delay_between_requests)
+    if err and bright_data_err:
+        err = f"Bright Data: {bright_data_err} | HTML: {err}"
     return count, err, "html"

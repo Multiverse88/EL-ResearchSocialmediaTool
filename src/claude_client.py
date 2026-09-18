@@ -87,7 +87,7 @@ class ClaudeChatHandler:
         Before any research/answer path runs, translates the message into typed chat
         actions (scrape a profile, start/stop monitoring, replace a monitored account,
         compare profiles) via `chat_actions.ChatActionOrchestrator` and executes them
-        against Apify/the scrapers, so commands like "ganti akun EasyLegal jadi
+        against Bright Data/the fallback scrapers, so commands like "ganti akun EasyLegal jadi
         @id.easylegal" actually mutate monitoring and scrape — not just answer as if
         they were a topic-research question.
         """
@@ -151,7 +151,7 @@ class ClaudeChatHandler:
         router. Returns an `ActionExecutionResult` — empty when nothing action-like was
         found, so ordinary research questions are entirely unaffected.
 
-        Action execution (Apify calls, DB mutations) is best-effort: any failure here
+        Action execution (provider calls, DB mutations) is best-effort: any failure here
         must degrade to "no action taken", never crash the primary chat/research path.
         A bug in one action executor should not take down basic research questions.
         """
@@ -194,8 +194,8 @@ class ClaudeChatHandler:
                 '{"type":"replace_monitored_account","platform":"instagram|tiktok","old_username":"...","new_username":"...","max_posts":30}\n'
                 '{"type":"stop_monitoring","platform":"instagram|tiktok","username":"..."}\n'
                 "Jika akun/topik target tidak jelas dari pesan user, kosongkan actions dan set "
-                "needs_clarification=true dengan clarification_question. Jangan pernah mengarang actor Apify, "
-                "URL, SQL, atau instruksi lain di luar skema ini."
+                "needs_clarification=true dengan clarification_question. Jangan pernah mengarang provider "
+                "dataset, URL, SQL, atau instruksi lain di luar skema ini."
             )
             messages = [{"role": "system", "content": system_prompt}]
             for m in history[-6:]:
@@ -355,7 +355,7 @@ class ClaudeChatHandler:
         Live-scrapes the topic before answering if we have no data yet, or the newest data is
         older than TOPIC_STALENESS_HOURS (default 6h). Runs synchronously (blocks the chat
         response) — this trades response latency for data freshness, and consumes scraper
-        quota (Apify credit, or risks free-tier IP/account rate limiting) on every genuinely
+        quota (Bright Data credit, or risks free-tier IP/account rate limiting) on every genuinely
         new or stale topic a user asks about. Disable via ENABLE_LIVE_SCRAPE_ON_CHAT=false.
         Returns a short human-readable status string if a scrape ran, else None.
         """
@@ -384,10 +384,17 @@ class ClaudeChatHandler:
             return None
 
         try:
+            from datetime import datetime, timezone
             from .scrapers.keyword_scraper import scrape_topic_content
             max_posts = int(os.getenv("MAX_POSTS_PER_SCRAPE", "30"))
             logger.info(f"Live scrape-on-chat: fetching fresh data for topic '{matched_topic}'")
-            result = scrape_topic_content(db, matched_topic, max_posts_per_platform=max_posts)
+            since = last_scraped or None
+            result = scrape_topic_content(
+                db,
+                matched_topic,
+                max_posts_per_platform=max_posts,
+                since=since,
+            )
             added = result.get("total_posts_added", 0)
             return (
                 f"🔍 Mengambil data terbaru untuk topik \"{matched_topic}\" dari Instagram & TikTok "

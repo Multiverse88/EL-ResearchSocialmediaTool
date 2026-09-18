@@ -29,14 +29,14 @@ class TestScrapeProfile(unittest.TestCase):
         self.db.close()
 
     def test_stale_profile_invokes_scraper_and_persists_posts(self):
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(3, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(3, None, "bright_data")) as mock_scrape:
             result = self.orch.plan_and_execute(self.db, "Cari 20 post terbaru @id.easylegal", [])
 
         mock_scrape.assert_called_once()
         self.assertEqual(len(result.receipts), 1)
         r = result.receipts[0]
         self.assertTrue(r.success)
-        self.assertEqual(r.backend, "apify")
+        self.assertEqual(r.backend, "bright_data")
         self.assertEqual(r.posts_collected, 3)
         self.assertFalse(r.used_cache)
 
@@ -62,20 +62,20 @@ class TestScrapeProfile(unittest.TestCase):
         recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         _seed_post(self.db, acc, recent)
 
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(2, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(2, None, "bright_data")) as mock_scrape:
             result = self.orch.plan_and_execute(self.db, "Cari data terbaru @id.easylegal", [])
 
         mock_scrape.assert_called_once()
         self.assertFalse(result.receipts[0].used_cache)
 
     def test_one_time_scrape_does_not_enable_monitoring(self):
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "apify")):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "bright_data")):
             self.orch.plan_and_execute(self.db, "Scrape @kompetitor_a", [])
         acc = self.db.get_account_by_username("instagram", "kompetitor_a")
         self.assertFalse(acc.monitoring_enabled)
 
-    def test_apify_failure_reported_not_masked_as_success(self):
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(0, "quota exceeded", "apify")):
+    def test_provider_failure_reported_not_masked_as_success(self):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(0, "quota exceeded", "bright_data")):
             result = self.orch.plan_and_execute(self.db, "Scrape @gagal_test", [])
         r = result.receipts[0]
         self.assertFalse(r.success)
@@ -87,7 +87,7 @@ class TestScrapeProfile(unittest.TestCase):
         # instagram id.easylegal" has no "@" and no cari/scrape/ambil/refresh verb, so
         # it was falling through to the old topic-research flow and being misread as a
         # keyword search for "soal" — the account was never actually looked up.
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(5, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(5, None, "bright_data")) as mock_scrape:
             result = self.orch.plan_and_execute(
                 self.db, "saya mau riset soal akun instagram id.easylegal", [],
             )
@@ -103,7 +103,7 @@ class TestScrapeProfile(unittest.TestCase):
         self.assertIsNotNone(acc)
 
     def test_bare_account_reference_username_before_platform(self):
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "bright_data")) as mock_scrape:
             result = self.orch.plan_and_execute(self.db, "cek akun id.easylegal di instagram dong", [])
         mock_scrape.assert_called_once()
         self.assertTrue(result.receipts[0].success)
@@ -127,7 +127,7 @@ class TestMonitoring(unittest.TestCase):
         self.db.close()
 
     def test_monitor_account_enrolls_in_scheduling(self):
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(5, None, "apify")):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(5, None, "bright_data")):
             self.orch.plan_and_execute(self.db, "Mulai monitor @id.easylegal", [])
         acc = self.db.get_account_by_username("instagram", "id.easylegal")
         self.assertTrue(acc.monitoring_enabled)
@@ -165,7 +165,7 @@ class TestReplaceMonitoredAccount(unittest.TestCase):
         old = self.db.upsert_account(Account.create(platform="instagram", username="easylegal_id", monitoring_enabled=True))
         _seed_post(self.db, old, datetime.now(timezone.utc).isoformat(), platform_post_id="hist-1")
 
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(4, None, "apify")) as mock_scrape:
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(4, None, "bright_data")) as mock_scrape:
             result = self.orch.plan_and_execute(
                 self.db, "Ganti akun EasyLegal dari @easylegal_id menjadi @id.easylegal", [],
             )
@@ -186,7 +186,7 @@ class TestReplaceMonitoredAccount(unittest.TestCase):
         _seed_post(self.db, old, datetime.now(timezone.utc).isoformat(), platform_post_id="old-1")
         _seed_post(self.db, new, datetime.now(timezone.utc).isoformat(), platform_post_id="new-1")
 
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "apify")):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "bright_data")):
             self.orch.plan_and_execute(
                 self.db, "Ganti akun @easylegal_id menjadi @id.easylegal", [],
             )
@@ -201,7 +201,7 @@ class TestReplaceMonitoredAccount(unittest.TestCase):
     def test_replace_scrape_failure_keeps_monitoring_change(self):
         old = self.db.upsert_account(Account.create(platform="instagram", username="easylegal_id", monitoring_enabled=True))
 
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(0, "network error", "apify")):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(0, "network error", "bright_data")):
             result = self.orch.plan_and_execute(
                 self.db, "Ganti akun @easylegal_id menjadi @id.easylegal", [],
             )
@@ -232,8 +232,8 @@ class TestCompareProfiles(unittest.TestCase):
     def test_partial_failure_still_returns_successful_target(self):
         def side_effect(db, account, max_posts):
             if account.username == "id.easylegal":
-                return (2, None, "apify")
-            return (0, "private account", "apify")
+                return (2, None, "bright_data")
+            return (0, "private account", "bright_data")
 
         with patch.object(ig_module, "scrape_instagram_profile", side_effect=side_effect):
             result = self.orch.plan_and_execute(
@@ -249,7 +249,7 @@ class TestCompareProfiles(unittest.TestCase):
         self.assertEqual(failures[0].target, "legalku")
 
     def test_targets_over_limit_rejected(self):
-        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "apify")):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "bright_data")):
             result = self.orch.plan_and_execute(
                 self.db, "Bandingkan @a1 @a2 @a3 @a4 @a5", [],
             )

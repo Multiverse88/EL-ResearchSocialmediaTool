@@ -9,8 +9,8 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
 ## 🚀 Fitur Utama
 
 - **Scraping Terjadwal Multi-Platform** (3 tingkat, otomatis pilih yang tersedia):
-  1. **Apify** (jika `APIFY_API_TOKEN` diisi) — paling reliable, pakai proxy residential milik Apify. Gratis ±1.850 post/bulan dari kredit $5 bawaan akun Apify (tanpa kartu kredit).
-  2. **Gratis self-hosted**: Instagram via Instaloader (perlu login akun burner untuk hindari rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright) — tanpa biaya, tanpa batas volume, tapi lebih rentan diblokir/berubah struktur halaman.
+  1. **Bright Data Scraper APIs** (jika `BRIGHT_DATA_API_TOKEN` diisi) — Instagram Posts/Reels dan TikTok Posts memakai dataset terkelola Bright Data. Pencarian topik Instagram memakai SERP API (`BRIGHT_DATA_SERP_ZONE`) untuk menemukan URL post/reel lalu mengambil detailnya lewat dataset.
+  2. **Fallback self-hosted**: Instagram via Instaloader (perlu login akun burner untuk mengurangi rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright).
   3. **Fallback terakhir**: TikTok raw HTML parsing kalau Playwright/Chromium tidak tersedia.
   - **Scheduler**: Runner siap dipanggil oleh Dokploy Scheduled Jobs (`0 2 * * *`).
 - **AI Chat Panel Berbasis Web ([Open WebUI](https://openwebui.com/))**:
@@ -18,7 +18,7 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
   - Didukung oleh model Claude API (`claude-3-5-sonnet`) dengan integrasi native **Tool Use**.
   - Auto-discovery model via endpoint `/v1/models` dan `/v1/chat/completions`.
 - **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 6 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
-- **Chat-to-Apify Action**: chat bisa langsung dipakai untuk mengelola monitoring dan menjalankan scrape via Apify — bukan cuma bertanya. Contoh perintah: *"Cari 20 post terbaru @kompetitor_a"*, *"Mulai monitor @id.easylegal"*, *"Ganti akun EasyLegal jadi @id.easylegal"*, *"Berhenti monitor @legalku"*, *"Bandingkan @id.easylegal dengan @legalku"*. Pesan diterjemahkan lewat parser deterministik untuk perintah eksplisit, dengan AI planner (JSON terstruktur via router) sebagai fallback untuk kalimat yang lebih natural. Lihat `src/chat_actions.py` dan spesifikasi lengkap di `docs/superpowers/specs/2026-09-16-chat-apify-action-orchestrator-design.md`.
+- **Chat-to-Scraper Action**: chat bisa langsung dipakai untuk mengelola monitoring dan menjalankan scrape via Bright Data — bukan cuma bertanya. Contoh perintah: *"Cari 20 post terbaru @kompetitor_a"*, *"Mulai monitor @id.easylegal"*, *"Ganti akun EasyLegal jadi @id.easylegal"*, *"Berhenti monitor @legalku"*, *"Bandingkan @id.easylegal dengan @legalku"*. Pesan diterjemahkan lewat parser deterministik untuk perintah eksplisit, dengan AI planner (JSON terstruktur via router) sebagai fallback untuk kalimat yang lebih natural. Lihat `src/chat_actions.py`.
 - **Claude API Tools**:
   - `search_scraped_posts`: Pencarian post berdasarkan kata kunci, tanggal, platform, username.
   - `get_engagement_summary`: Perhitungan likes, comments, views rata-rata & engagement rate.
@@ -33,7 +33,7 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
 ## 🏗️ Arsitektur
 
 ```
-[Apify / TikTokApi(Playwright) / Instaloader] --(Dokploy Scheduled Jobs)--> [Database (SQLite / Postgres)]
+[Bright Data / TikTokApi(Playwright) / Instaloader] --(Scheduled Jobs)--> [Database (SQLite / Postgres)]
                                                                       │
                                                                       ▼
                                                       [Backend API - FastAPI]
@@ -63,10 +63,11 @@ ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxx
 CLAUDE_MODEL=claude-3-5-sonnet-20241022
 DATABASE_PATH=/app/data/social_media.db
 MAX_POSTS_PER_SCRAPE=30
-APIFY_API_TOKEN=apify_api_xxxxxxx
+BRIGHT_DATA_API_TOKEN=isi-dengan-token-bright-data
+BRIGHT_DATA_SERP_ZONE=nama-zone-serp
 CHAT_ACTION_API_KEY=isi-dengan-secret-acak
 ```
-`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Apify Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions` — set nilai yang sama sebagai `OPENAI_API_KEY` service `open-webui` di `docker-compose.yml` supaya hanya instance Open WebUI internal yang bisa menjalankannya.
+`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Scraper Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions` — set nilai yang sama sebagai `OPENAI_API_KEY` service `open-webui` di `docker-compose.yml` supaya hanya instance Open WebUI internal yang bisa menjalankannya.
 
 ### 3. Setting Routing / Domain (Tab Domains)
 - **Open WebUI (Chat Panel)**: Arahkan ke service `open-webui` port `8080`.

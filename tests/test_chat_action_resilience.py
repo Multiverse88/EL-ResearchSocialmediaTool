@@ -13,7 +13,7 @@ from src.chat_actions import ActionExecutionResult
 class TestChatActionOrchestrationNeverCrashesChat(unittest.TestCase):
     """Regression test for a real production incident: an exception raised anywhere
     inside chat-action orchestration (deterministic parser, AI planner, or executor —
-    e.g. a SQLite lock, an unexpected Apify response shape) propagated uncaught through
+    e.g. a SQLite lock, an unexpected provider response shape) propagated uncaught through
     process_chat/stream_chat, turning the entire /chat endpoint into a raw HTTP 500 even
     for ordinary research questions that requested no action at all."""
 

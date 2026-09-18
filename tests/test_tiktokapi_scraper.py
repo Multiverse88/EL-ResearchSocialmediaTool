@@ -47,28 +47,28 @@ class TestTikTokApiAdapter(unittest.TestCase):
 
 class TestTikTokApiDispatch(unittest.TestCase):
     def setUp(self):
-        os.environ.pop("APIFY_API_TOKEN", None)
+        os.environ.pop("BRIGHT_DATA_API_TOKEN", None)
         self.db = Database(":memory:")
 
     def tearDown(self):
-        os.environ.pop("APIFY_API_TOKEN", None)
+        os.environ.pop("BRIGHT_DATA_API_TOKEN", None)
         self.db.close()
 
-    def test_profile_dispatcher_prefers_apify_when_token_present(self):
-        os.environ["APIFY_API_TOKEN"] = "fake-token"
+    def test_profile_dispatcher_prefers_bright_data_when_token_present(self):
+        os.environ["BRIGHT_DATA_API_TOKEN"] = "fake-token"
         acc = self.db.upsert_account(Account.create(platform="tiktok", username="brand", is_own_brand=True))
 
-        with patch.object(tt_module, "_scrape_tiktok_profile_apify", return_value=(0, None)) as mock_apify, \
+        with patch.object(tt_module, "_scrape_tiktok_profile_bright_data", return_value=(0, None)) as mock_bright_data, \
              patch.object(tt_module, "is_tiktokapi_available", return_value=True), \
              patch.object(tt_module, "_scrape_tiktok_profile_playwright") as mock_pw, \
              patch.object(tt_module, "_scrape_tiktok_profile_html") as mock_html:
             tt_module.scrape_tiktok_profile(self.db, acc, max_posts=5)
 
-        mock_apify.assert_called_once()
+        mock_bright_data.assert_called_once()
         mock_pw.assert_not_called()
         mock_html.assert_not_called()
 
-    def test_profile_dispatcher_uses_playwright_when_no_apify_but_tiktokapi_available(self):
+    def test_profile_dispatcher_uses_playwright_without_bright_data_but_tiktokapi_available(self):
         acc = self.db.upsert_account(Account.create(platform="tiktok", username="brand2", is_own_brand=True))
 
         with patch.object(tt_module, "is_tiktokapi_available", return_value=True), \

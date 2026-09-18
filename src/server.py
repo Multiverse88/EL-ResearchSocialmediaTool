@@ -71,7 +71,7 @@ def require_api_key(
 # --- Chat-action authorization ---
 # Set CHAT_ACTION_API_KEY in the environment to require `X-API-Key` (or `Authorization:
 # Bearer`) on the chat endpoints. Chat can translate natural-language messages into
-# Apify scrapes and monitoring mutations (see chat_actions.py), so — unlike the
+# Bright Data scrapes and monitoring mutations (see chat_actions.py), so — unlike the
 # zero-config internal-tool default for plain CRUD writes above — this is meant to be
 # set in any deployment reachable by more than the operator's own OpenWebUI instance.
 # Left unset, chat stays open (matches this project's existing zero-config default) but
@@ -80,7 +80,7 @@ CHAT_ACTION_API_KEY = os.getenv("CHAT_ACTION_API_KEY", "").strip()
 if not CHAT_ACTION_API_KEY:
     logger.warning(
         "CHAT_ACTION_API_KEY is not set. Chat endpoints (POST /chat, /v1/chat/completions) are "
-        "UNAUTHENTICATED and can trigger Apify scraping/monitoring mutations from any caller. "
+        "UNAUTHENTICATED and can trigger Bright Data scraping/monitoring mutations from any caller. "
         "Set CHAT_ACTION_API_KEY in Dokploy Environment and configure it as your OpenWebUI "
         "instance's OPENAI_API_KEY to restrict chat-driven actions to your internal OpenWebUI."
     )

@@ -36,14 +36,24 @@ CLAUDE_MODEL=claude-3-5-sonnet-20241022
 # 2. Path Database
 DATABASE_PATH=/app/data/social_media.db
 
-# 3. Kredensial Scraping (Opsional, gunakan akun burner jika ada)
+# 3. Bright Data Scraper APIs (direkomendasikan)
+BRIGHT_DATA_API_TOKEN=isi-dengan-token-bright-data
+# Wajib untuk pencarian topik Instagram; gunakan nama SERP API zone dari Bright Data
+BRIGHT_DATA_SERP_ZONE=nama-zone-serp
+
+# 4. Kredensial fallback self-hosted (opsional; gunakan akun burner jika ada)
 INSTAGRAM_USERNAME=
 INSTAGRAM_PASSWORD=
 TIKTOK_MS_TOKEN=
 
-# 4. Batas Postingan per Akun tiap Run
+# 5. Batas Postingan per Akun tiap Run
 MAX_POSTS_PER_SCRAPE=30
 ```
+
+Aktifkan dataset **Instagram Posts**, **Instagram Reels**, dan **TikTok Posts** di
+Bright Data. Scrape profil dan topik TikTok memakai dataset tersebut langsung.
+Pencarian topik Instagram memakai SERP API zone untuk menemukan URL post/reel,
+kemudian mengambil detail kontennya lewat dataset Instagram.
 
 Klik **Save**.
 

@@ -141,3 +141,34 @@ class ScrapeLog:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+@dataclass
+class TopicScrape:
+    id: str
+    keyword: str
+    platform: str
+    posts_found: int
+    scraped_at: str
+    status: str
+
+    @classmethod
+    def create(
+        cls,
+        keyword: str,
+        platform: str,
+        posts_found: int = 0,
+        status: str = "success",
+        scraped_at: Optional[str] = None,
+        scrape_id: Optional[str] = None,
+    ) -> TopicScrape:
+        return cls(
+            id=scrape_id or str(uuid.uuid4()),
+            keyword=keyword.strip().lower(),
+            platform=platform.lower(),
+            posts_found=posts_found,
+            scraped_at=scraped_at or datetime.now(timezone.utc).isoformat(),
+            status=status.lower(),
+        )
+
+    def to_dict(self) -> dict:
+        return asdict(self)

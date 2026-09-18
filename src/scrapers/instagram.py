@@ -9,7 +9,12 @@ import instaloader
 from ..models import Account, Post, ScrapeLog
 from ..db import Database
 from ..ingest import ingest_scraped_batch
-from .apify_client import INSTAGRAM_ACTOR_ID, is_apify_configured, run_actor_sync
+from .bright_data_client import (
+    INSTAGRAM_POSTS_DATASET_ID,
+    INSTAGRAM_REELS_DATASET_ID,
+    is_bright_data_configured,
+    run_dataset,
+)
 
 logger = logging.getLogger("scrapers.instagram")
 
@@ -68,26 +73,56 @@ def _merge_recent_posts(
     )[:limit]
 
 
-def _apify_item_to_raw_post(item: Dict[str, Any], content_type: str) -> Optional[Dict[str, Any]]:
-    if item.get("error") or not (item.get("shortCode") or item.get("id")):
+def _bright_data_item_to_raw_post(
+    item: Dict[str, Any],
+    content_type: str,
+) -> Optional[Dict[str, Any]]:
+    if item.get("error"):
         return None
-    views = item.get("videoPlayCount")
+    post_id = item.get("shortcode") or item.get("post_id") or item.get("content_id") or item.get("id")
+    url = str(item.get("url") or "")
+    if not post_id and ("/p/" in url or "/reel/" in url):
+        post_id = url.rstrip("/").rsplit("/", 1)[-1]
+    if not post_id:
+        return None
+    views = item.get("video_play_count")
     if views is None:
-        views = item.get("videoViewCount")
+        views = item.get("views")
+    photos = item.get("photos") or []
+    first_photo = photos[0] if photos and isinstance(photos[0], str) else ""
     return {
-        "shortcode": item.get("shortCode") or item.get("id"),
-        "id": str(item.get("id") or item.get("shortCode")),
-        "caption": item.get("caption") or "",
+        "shortcode": str(post_id),
+        "id": str(item.get("post_id") or item.get("id") or post_id),
+        "caption": item.get("description") or item.get("caption") or "",
         "display_url": (
-            item.get("videoUrl") if content_type == "reel" else None
-        ) or item.get("displayUrl") or "",
-        # Apify uses -1 for hidden/unavailable engagement counts.
-        "likes": max(0, item.get("likesCount") or 0),
-        "comments": max(0, item.get("commentsCount") or 0),
-        "video_view_count": max(0, views) if views is not None else None,
-        "date_utc": item.get("timestamp"),
+            item.get("video_url")
+            or item.get("image_url")
+            or item.get("thumbnail")
+            or first_photo
+            or ""
+        ),
+        "likes": max(0, int(item.get("likes") or 0)),
+        "comments": max(0, int(item.get("num_comments") or item.get("comments") or 0)),
+        "video_view_count": max(0, int(views)) if views is not None else None,
+        "date_utc": item.get("date_posted") or item.get("datetime"),
         "content_type": content_type,
     }
+
+
+def _expand_bright_data_records(
+    items: List[Dict[str, Any]],
+    content_type: str,
+) -> List[Dict[str, Any]]:
+    raw_posts: List[Dict[str, Any]] = []
+    for item in items:
+        records = item.get("posts") if isinstance(item.get("posts"), list) else [item]
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            raw_post = _bright_data_item_to_raw_post(record, content_type)
+            if raw_post is not None:
+                raw_posts.append(raw_post)
+    return raw_posts
 
 
 def _instaloader_post_to_raw_post(post: Any, content_type: str) -> Dict[str, Any]:
@@ -104,42 +139,51 @@ def _instaloader_post_to_raw_post(post: Any, content_type: str) -> Dict[str, Any
     }
 
 
-def _scrape_instagram_profile_apify(
+def _scrape_instagram_profile_bright_data(
     db: Database,
     account: Account,
     max_posts: int,
     progress_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[int, Optional[str]]:
-    """Scrapes both Instagram Feed posts and Reels via Apify."""
+    """Scrapes Instagram Feed posts and Reels through Bright Data."""
     username = account.username.strip().lstrip("@")
-    logger.info(f"Starting Instagram Feed + Reels scrape (Apify) for @{username} (combined limit={max_posts})")
+    profile_url = f"https://www.instagram.com/{username}/"
+    logger.info(
+        "Starting Instagram Feed + Reels scrape (Bright Data) for @%s (combined limit=%s)",
+        username,
+        max_posts,
+    )
 
     try:
-        source_posts: Dict[str, List[Dict[str, Any]]] = {"feed": [], "reel": []}
-        for content_type, results_type in (("feed", "posts"), ("reel", "reels")):
-            if progress_callback:
-                label = "Feed" if content_type == "feed" else "Reels"
-                progress_callback(f"Mengambil postingan {label} @{username}…")
-            items = run_actor_sync(
-                INSTAGRAM_ACTOR_ID,
-                {
-                    "directUrls": [f"https://www.instagram.com/{username}/"],
-                    "resultsType": results_type,
-                    "resultsLimit": max_posts,
-                },
-            )
-            for item in items:
-                raw_post = _apify_item_to_raw_post(item, content_type)
-                if raw_post is not None:
-                    source_posts[content_type].append(raw_post)
+        if progress_callback:
+            progress_callback(f"Mengambil postingan Feed @{username} melalui Bright Data…")
+        feed_items = run_dataset(
+            INSTAGRAM_POSTS_DATASET_ID,
+            [{"url": profile_url, "num_of_posts": max_posts, "post_type": "post"}],
+            query={"type": "discover_new", "discover_by": "url"},
+        )
+        if progress_callback:
+            progress_callback(f"Mengambil Reels @{username} melalui Bright Data…")
+        reel_items = run_dataset(
+            INSTAGRAM_REELS_DATASET_ID,
+            [{"url": profile_url, "num_of_posts": max_posts}],
+            query={"type": "discover_new", "discover_by": "url"},
+        )
+        feed_posts = _expand_bright_data_records(feed_items, "feed")
+        reel_posts = _expand_bright_data_records(reel_items, "reel")
 
         if progress_callback:
             progress_callback("Menggabungkan Feed dan Reels, menghapus duplikasi, lalu menyimpan data…")
-        raw_posts = _merge_recent_posts(source_posts["feed"], source_posts["reel"], max_posts)
+        raw_posts = _merge_recent_posts(feed_posts, reel_posts, max_posts)
         if not raw_posts:
-            err_msg = f"Apify Instagram scraper returned no usable Feed posts or Reels for @{username} (profile may be private, empty, or not found)"
+            err_msg = (
+                f"Bright Data returned no usable Feed posts or Reels for @{username} "
+                "(profile may be private, empty, or not found)"
+            )
             logger.warning(err_msg)
-            db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+            db.insert_scrape_log(
+                ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg)
+            )
             return 0, err_msg
 
         inserted_count, err = ingest_scraped_batch(
@@ -149,18 +193,23 @@ def _scrape_instagram_profile_apify(
             raw_posts=raw_posts,
         )
         if err:
-            logger.error(f"Ingestion error for @{username}: {err}")
+            logger.error("Ingestion error for @%s: %s", username, err)
             return 0, err
 
-        logger.info(f"Successfully scraped (Apify) and stored {inserted_count} Feed/Reels items for @{username}")
+        logger.info(
+            "Successfully scraped (Bright Data) and stored %s Feed/Reels items for @%s",
+            inserted_count,
+            username,
+        )
         if progress_callback:
             progress_callback(f"Selesai: {inserted_count} postingan Feed/Reels tersimpan")
         return inserted_count, None
-
     except Exception as exc:
-        err_msg = f"Apify Instagram scrape failed for @{username}: {str(exc)}"
+        err_msg = f"Bright Data Instagram scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+        db.insert_scrape_log(
+            ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg)
+        )
         return 0, err_msg
 
 
@@ -246,24 +295,22 @@ def scrape_instagram_profile(
 ) -> Tuple[int, Optional[str], str]:
     """
     Scrapes public Feed posts and Reels from an Instagram profile and saves them.
-    Uses Apify when configured, then falls back to Instaloader. The returned backend
-    always identifies the scraper that produced the result. If both fail, the error
-    includes both reasons. `progress_callback`, when supplied, receives user-facing
-    phase updates suitable for a streaming chat UI.
+    Uses Bright Data when configured, then falls back to Instaloader. The returned
+    backend always identifies the scraper that produced the result.
     """
-    apify_err: Optional[str] = None
-    if is_apify_configured():
-        count, err = _scrape_instagram_profile_apify(
+    bright_data_err: Optional[str] = None
+    if is_bright_data_configured():
+        count, err = _scrape_instagram_profile_bright_data(
             db, account, max_posts, progress_callback=progress_callback,
         )
         if not err:
-            return count, None, "apify"
-        apify_err = err
-        logger.warning(f"Apify failed, falling back to Instaloader: {err}")
+            return count, None, "bright_data"
+        bright_data_err = err
+        logger.warning("Bright Data failed, falling back to Instaloader: %s", err)
     count, err = _scrape_instagram_profile_instaloader(
         db, account, max_posts, delay_between_requests,
         progress_callback=progress_callback,
     )
-    if err and apify_err:
-        err = f"Apify: {apify_err} | Instaloader: {err}"
+    if err and bright_data_err:
+        err = f"Bright Data: {bright_data_err} | Instaloader: {err}"
     return count, err, "instaloader"
