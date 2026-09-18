@@ -44,7 +44,11 @@ STOP_WORDS = {
     "riset", "cari", "topik", "konten", "apa", "yang", "tentang",
     "bagaimana", "gimana", "dong", "media", "sosial", "di", "dan",
     "atau", "dari", "ke", "untuk", "ini", "itu", "ada", "apakah",
-    "halo", "hai", "tes", "test", "ya", "kan", "nih"
+    "halo", "hai", "tes", "test", "ya", "kan", "nih",
+    "coba", "cek", "lihat", "tampilkan", "kasih", "kirim", "kirimkan",
+    "berikan", "update", "sekarang", "dulu", "nanti", "tadi", "oke",
+    "ok", "baik", "silakan", "tarik", "ambil", "gitu", "gini", "yuk",
+    "ayo", "please", "plis", "coy", "bro", "gan", "min", "kak",
 }
 
 
@@ -310,15 +314,23 @@ class ClaudeChatHandler:
         db: Database,
         user_message: str,
         history: List[Dict[str, Any]],
-    ) -> str:
-        """Matches the user's message (or recent history, for follow-ups) to a known/likely topic keyword."""
+    ) -> Tuple[str, bool]:
+        """Matches the user's message (or recent history, for follow-ups) to a known/likely
+        topic keyword. Returns `(topic, is_confident)`: `is_confident` is True only when the
+        topic came from an already-known topic (registered in `topics` or the static seed
+        list), or from the AI's own reading of the prompt confirming genuine topic-research
+        intent — never from blindly guessing an arbitrary leftover word out of the sentence.
+        Callers must gate live-scrape-on-chat (which registers a new topic and spends
+        Bright Data quota) on `is_confident`, so filler/test prompts like "coba" never get
+        treated as a real research topic.
+        """
         msg_lower = user_message.lower()
         matched_topic = None
         for t in self._resolve_topics(db):
             if t in msg_lower:
                 matched_topic = t
                 break
-        # Look back in history if this is a follow-up query like "coba buat list nya" or "di akun mana saja"
+        # Look back in history if this is a follow-up query like "gimana list nya" or "di akun mana saja"
         if not matched_topic and history:
             for past_msg in reversed(history):
                 past_content = str(past_msg.get("content", "")).lower()
@@ -329,10 +341,76 @@ class ClaudeChatHandler:
                 if matched_topic:
                     break
 
-        if not matched_topic:
-            words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
-            matched_topic = words[0] if words else "pendirian PT"
-        return matched_topic
+        if matched_topic:
+            return matched_topic, True
+
+        # No known/seeded topic substring matched the message. Before ever treating this
+        # as a topic worth spending Bright Data quota on, have the AI actually read and
+        # understand the prompt first: is this genuine topic-research intent, and if so
+        # what's the real topic? Only a positive, understood answer counts as confident —
+        # an unreachable/unconfigured AI or an unclear/filler prompt never does.
+        ai_topic = self._classify_topic_intent(user_message, history)
+        if ai_topic:
+            return ai_topic, True
+
+        words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
+        return (words[0] if words else "pendirian PT"), False
+
+    def _classify_topic_intent(self, message: str, history: List[Dict[str, Any]]) -> Optional[str]:
+        """Asks the AI to read the prompt and decide whether it expresses genuine intent to
+        research a social media content topic/keyword (vs. a filler/test message, greeting,
+        or unrelated question). Returns the concise topic keyword on a confident positive
+        read, else None. Never raises — an unreachable router, malformed response, or
+        unclear prompt all resolve to None so the caller falls back to the non-scraping
+        path instead of guessing.
+        """
+        try:
+            base = (self.base_url or os.getenv("OPENAI_API_BASE_URL") or "").rstrip("/")
+            if not self.api_key or not base:
+                return None
+            if not base.endswith("/v1"):
+                base += "/v1"
+            endpoint_url = f"{base}/chat/completions"
+            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+            target_model = self.model
+            if not target_model or target_model.lower() in ("vision", "claude-3-5-sonnet-20241022", "default"):
+                target_model = "Thinking"
+
+            system_prompt = (
+                "Baca pesan user dan tentukan apakah pesan ini benar-benar berisi permintaan riset "
+                "topik/kata kunci konten media sosial (Instagram/TikTok) — misalnya soal jasa hukum, "
+                "pajak, perizinan, atau topik konten lain yang ingin dianalisis. Pesan basa-basi, sapaan, "
+                "kalimat uji coba/testing ('coba', 'tes', 'cek dulu'), atau pertanyaan yang tidak jelas "
+                "maksud topiknya BUKAN permintaan riset topik. Balas HANYA JSON valid tanpa teks lain:\n"
+                '{"is_topic_research": true|false, "topic": "kata kunci topik singkat atau null"}\n'
+                'Isi "topic" hanya jika is_topic_research true, dengan kata kunci topik yang ringkas '
+                "(bukan kalimat penuh, bukan filler word).\n"
+                "Riwayat percakapan boleh dipakai sebagai konteks, tapi keputusan HARUS berdasar pesan "
+                "TERAKHIR user."
+            )
+            messages = [{"role": "system", "content": system_prompt}]
+            for m in history[-6:]:
+                role = m.get("role")
+                content = m.get("content")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": str(content)})
+            messages.append({"role": "user", "content": message})
+
+            payload = {"model": target_model, "stream": False, "messages": messages}
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.post(endpoint_url, headers=headers, json=payload)
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            if not isinstance(parsed, dict) or not parsed.get("is_topic_research"):
+                return None
+            topic = str(parsed.get("topic") or "").strip().lower()
+            return topic or None
+        except Exception as exc:
+            logger.warning(f"Topic intent classification call failed: {exc}")
+            return None
 
     def _resolve_conversation_account(
         self,
@@ -485,8 +563,9 @@ Postingan dengan Likes Tertinggi:
             subject_label = f"akun @{username}"
         else:
             if matched_topic is None:
-                matched_topic = self._resolve_matched_topic(db, user_message, history)
-                self._ensure_topic_freshness(db, matched_topic)
+                matched_topic, topic_is_confident = self._resolve_matched_topic(db, user_message, history)
+                if topic_is_confident:
+                    self._ensure_topic_freshness(db, matched_topic)
 
             # Pull real data from database for this topic to inject as factual context
             topic_data = db.get_topic_summary(matched_topic)
@@ -644,8 +723,8 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         account_ref = action_result.matched_account if action_result else None
         action_context_text = action_result.context_text if action_result else ""
         if matched_topic is None and account_ref is None:
-            matched_topic = self._resolve_matched_topic(db, user_message, history)
-            freshness_status = self._ensure_topic_freshness(db, matched_topic)
+            matched_topic, topic_is_confident = self._resolve_matched_topic(db, user_message, history)
+            freshness_status = self._ensure_topic_freshness(db, matched_topic) if topic_is_confident else None
             if freshness_status:
                 yield {"type": "reasoning", "text": freshness_status}
 

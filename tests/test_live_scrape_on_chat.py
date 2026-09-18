@@ -1,7 +1,8 @@
+import json
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src.claude_client import ClaudeChatHandler
 from src.db import Database
@@ -29,6 +30,78 @@ class TestTopicLastScraped(unittest.TestCase):
                         scraped_at="2026-01-05T00:00:00+00:00", topic="izin usaha"),
         ])
         self.assertEqual(self.db.get_topic_last_scraped("izin usaha"), "2026-01-05T00:00:00+00:00")
+
+
+class TestResolveMatchedTopicConfidence(unittest.TestCase):
+    """Regression test: a filler/test prompt with no recognizable topic (e.g. "coba dong",
+    "cek dulu ya") must never be treated as a real research topic. Before this fix,
+    `_resolve_matched_topic`'s fallback picked the first non-stopword out of the sentence
+    and callers fed it straight into `_ensure_topic_freshness`, which registers a new row
+    in `topics` and burns Bright Data quota searching for the leftover word.
+
+    The current flow has the AI actually read the prompt first (`_classify_topic_intent`)
+    before any unmatched message can count as a confident topic — these tests mock that
+    router call directly so no real network request happens.
+    """
+
+    def setUp(self):
+        self.db = Database(":memory:")
+        self.handler = ClaudeChatHandler(api_key="fake-router-key", base_url="https://router.example/v1")
+
+    def tearDown(self):
+        self.db.close()
+
+    @staticmethod
+    def _mock_router_client(payload: dict):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"choices": [{"message": {"content": json.dumps(payload)}}]}
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.__exit__.return_value = False
+        client.post.return_value = response
+        return client
+
+    def test_filler_only_message_is_not_confident(self):
+        client = self._mock_router_client({"is_topic_research": False, "topic": None})
+        with patch("httpx.Client", return_value=client):
+            topic, is_confident = self.handler._resolve_matched_topic(self.db, "coba dong", [])
+        self.assertFalse(is_confident)
+
+    def test_known_seed_topic_is_confident_without_calling_ai(self):
+        with patch("httpx.Client") as mock_client_cls:
+            topic, is_confident = self.handler._resolve_matched_topic(
+                self.db, "cari info izin usaha oss dong", [],
+            )
+        mock_client_cls.assert_not_called()
+        self.assertTrue(is_confident)
+        self.assertEqual(topic, "izin usaha oss")
+
+    def test_ai_confirms_genuine_topic_intent_marks_confident(self):
+        client = self._mock_router_client({"is_topic_research": True, "topic": "sewa virtual office"})
+        with patch("httpx.Client", return_value=client):
+            topic, is_confident = self.handler._resolve_matched_topic(
+                self.db, "ada rekomendasi kantor buat startup baru gak?", [],
+            )
+        self.assertTrue(is_confident)
+        self.assertEqual(topic, "sewa virtual office")
+
+    def test_ai_classifier_unreachable_falls_back_to_not_confident(self):
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.side_effect = RuntimeError("no network in test")
+            topic, is_confident = self.handler._resolve_matched_topic(self.db, "coba dong", [])
+        self.assertFalse(is_confident)
+
+    def test_filler_message_never_reaches_bright_data_or_registers_topic(self):
+        with patch("src.scrapers.keyword_scraper.scrape_topic_content") as mock_scrape, \
+             patch.object(self.handler, "_build_router_context",
+                           return_value=("http://fake/v1/chat/completions", {}, "Thinking", [], "coba", {})), \
+             patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.side_effect = RuntimeError("no network in test")
+            list(self.handler.stream_router_chat(self.db, "coba dong", []))
+
+        mock_scrape.assert_not_called()
+        self.assertIsNone(self.db.get_topic_last_scraped("coba"))
 
 
 class TestEnsureTopicFreshness(unittest.TestCase):
@@ -105,7 +178,7 @@ class TestStreamRouterChatYieldsFreshnessStatus(unittest.TestCase):
 
     def test_yields_freshness_status_before_router_call(self):
         fake_status = "🔍 Mengambil data terbaru...\n\n"
-        with patch.object(self.handler, "_resolve_matched_topic", return_value="izin usaha"), \
+        with patch.object(self.handler, "_resolve_matched_topic", return_value=("izin usaha", True)), \
              patch.object(self.handler, "_ensure_topic_freshness", return_value=fake_status), \
              patch.object(self.handler, "_build_router_context",
                            return_value=("http://fake/v1/chat/completions", {}, "Thinking", [], "izin usaha", {})), \
