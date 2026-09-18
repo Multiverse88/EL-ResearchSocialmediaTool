@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -24,19 +26,79 @@ class BrightDataError(RuntimeError):
     """A sanitized Bright Data configuration, transport, or API failure."""
 
 
+_token_lock = threading.Lock()
+_token_counter = 0
+
+
+def get_bright_data_tokens() -> List[str]:
+    """Returns all configured Bright Data API tokens as a list.
+    Supports single token or comma/space-separated tokens in BRIGHT_DATA_API_TOKEN
+    or BRIGHT_DATA_API_TOKENS for multi-account pool and failover.
+    """
+    raw = os.getenv("BRIGHT_DATA_API_TOKENS") or os.getenv("BRIGHT_DATA_API_TOKEN") or ""
+    return [t.strip() for t in re.split(r"[,;\s]+", raw) if t.strip()]
+
+
 def get_bright_data_token() -> Optional[str]:
-    token = os.getenv("BRIGHT_DATA_API_TOKEN", "").strip()
-    return token or None
+    """Returns the primary (first) configured token, or None."""
+    tokens = get_bright_data_tokens()
+    return tokens[0] if tokens else None
+
+
+def get_bright_data_serp_zones() -> List[str]:
+    """Returns all configured SERP zones. Supports single or comma-separated list."""
+    raw = os.getenv("BRIGHT_DATA_SERP_ZONES") or os.getenv("BRIGHT_DATA_SERP_ZONE") or ""
+    return [z.strip() for z in re.split(r"[,;\s]+", raw) if z.strip()]
 
 
 def get_bright_data_serp_zone() -> Optional[str]:
-    zone = os.getenv("BRIGHT_DATA_SERP_ZONE", "").strip()
-    return zone or None
+    """Returns the primary (first) configured SERP zone, or None."""
+    zones = get_bright_data_serp_zones()
+    return zones[0] if zones else None
 
 
 def is_bright_data_configured() -> bool:
-    return get_bright_data_token() is not None
+    return len(get_bright_data_tokens()) > 0
 
+
+def _mask_token(token: str) -> str:
+    if not token or len(token) < 8:
+        return "***"
+    return f"{token[:4]}...{token[-4:]}"
+
+
+def _get_rotating_tokens() -> List[str]:
+    """Returns the list of tokens ordered starting from the current round-robin index,
+    so consecutive requests naturally distribute load across all available accounts."""
+    global _token_counter
+    tokens = get_bright_data_tokens()
+    if not tokens:
+        return []
+    with _token_lock:
+        start_idx = _token_counter % len(tokens)
+        _token_counter += 1
+    return [tokens[(start_idx + i) % len(tokens)] for i in range(len(tokens))]
+
+
+def _get_rotating_serp_pairs() -> List[Tuple[str, str]]:
+    """Returns list of (token, zone) pairs ordered for round-robin rotation and failover."""
+    global _token_counter
+    tokens = get_bright_data_tokens()
+    zones = get_bright_data_serp_zones()
+    if not tokens:
+        raise BrightDataError("BRIGHT_DATA_API_TOKEN not configured")
+    if not zones:
+        raise BrightDataError("BRIGHT_DATA_SERP_ZONE not configured")
+    with _token_lock:
+        start_idx = _token_counter % len(tokens)
+        _token_counter += 1
+    pairs = []
+    for i in range(len(tokens)):
+        idx = (start_idx + i) % len(tokens)
+        tok = tokens[idx]
+        zn = zones[idx] if idx < len(zones) else zones[0]
+        pairs.append((tok, zn))
+    return pairs
 
 def _positive_float_env(name: str, default: float) -> float:
     try:
@@ -245,13 +307,13 @@ def run_dataset(
     timeout: Optional[float] = None,
     poll_interval: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
-    token = get_bright_data_token()
-    if not token:
+    tokens = _get_rotating_tokens()
+    if not tokens:
         raise BrightDataError("BRIGHT_DATA_API_TOKEN not configured")
     if not inputs:
         return []
+
     timeout_seconds = timeout or _positive_float_env("BRIGHT_DATA_TIMEOUT_SECONDS", 180.0)
-    deadline = time.monotonic() + timeout_seconds
     params: Dict[str, Any] = {
         "dataset_id": dataset_id,
         "include_errors": "true",
@@ -259,73 +321,104 @@ def run_dataset(
     if query:
         params.update(query)
     url = f"{BRIGHT_DATA_BASE_URL}/datasets/v3/scrape"
-    logger.info("Running Bright Data dataset %s (%s inputs)", dataset_id, len(inputs))
 
-    with httpx.Client(timeout=timeout_seconds) as client:
-        response = _post_with_rate_limit_retry(
-            client,
-            url,
-            headers=_headers(token),
-            params=params,
-            payload={"input": inputs},
+    last_error: Optional[Exception] = None
+    for attempt_idx, token in enumerate(tokens):
+        deadline = time.monotonic() + timeout_seconds
+        logger.info(
+            "Running Bright Data dataset %s (%s inputs, token %s)",
+            dataset_id, len(inputs), _mask_token(token),
         )
-        if not (200 <= response.status_code < 300):
-            _raise_http_error(response, "dataset scrape")
-        snapshot_id = _snapshot_id(response)
-        if snapshot_id:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise BrightDataError(
-                    f"Bright Data dataset {dataset_id} timed out after {timeout_seconds:g}s"
+        try:
+            with httpx.Client(timeout=timeout_seconds) as client:
+                response = _post_with_rate_limit_retry(
+                    client,
+                    url,
+                    headers=_headers(token),
+                    params=params,
+                    payload={"input": inputs},
                 )
-            return wait_for_snapshot(
-                snapshot_id,
-                token=token,
-                timeout=remaining,
-                poll_interval=poll_interval,
-                client=client,
-            )
-        if response.status_code == 202:
-            raise BrightDataError("Bright Data returned HTTP 202 without a snapshot_id")
-        return _records_from_response(response, "dataset scrape")
+                if not (200 <= response.status_code < 300):
+                    _raise_http_error(response, "dataset scrape")
+                snapshot_id = _snapshot_id(response)
+                if snapshot_id:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise BrightDataError(
+                            f"Bright Data dataset {dataset_id} timed out after {timeout_seconds:g}s"
+                        )
+                    return wait_for_snapshot(
+                        snapshot_id,
+                        token=token,
+                        timeout=remaining,
+                        poll_interval=poll_interval,
+                        client=client,
+                    )
+                if response.status_code == 202:
+                    raise BrightDataError("Bright Data returned HTTP 202 without a snapshot_id")
+                return _records_from_response(response, "dataset scrape")
+        except (BrightDataError, Exception) as exc:
+            last_error = exc
+            if attempt_idx + 1 < len(tokens):
+                logger.warning(
+                    "Bright Data dataset %s failed with token %s: %s. Failing over to next token in pool...",
+                    dataset_id, _mask_token(token), exc,
+                )
+                continue
+            raise
+
+    if last_error:
+        raise last_error
+    return []
 
 
 def search_instagram_urls(query: str, *, limit: int) -> List[str]:
-    token = get_bright_data_token()
-    if not token:
-        raise BrightDataError("BRIGHT_DATA_API_TOKEN not configured")
-    zone = get_bright_data_serp_zone()
-    if not zone:
-        raise BrightDataError("BRIGHT_DATA_SERP_ZONE not configured")
     if limit <= 0:
         return []
-
+    pairs = _get_rotating_serp_pairs()
     search_url = "https://www.google.com/search?" + urlencode(
         {"q": query, "num": min(limit, 100), "hl": "id", "gl": "id", "brd_json": "1"}
     )
-    payload = {"zone": zone, "url": search_url, "format": "raw"}
     timeout_seconds = _positive_float_env("BRIGHT_DATA_TIMEOUT_SECONDS", 180.0)
-    with httpx.Client(timeout=min(timeout_seconds, 60.0)) as client:
-        response = _post_with_rate_limit_retry(
-            client,
-            f"{BRIGHT_DATA_BASE_URL}/request",
-            headers=_headers(token),
-            payload=payload,
-        )
-    if not (200 <= response.status_code < 300):
-        _raise_http_error(response, "SERP request")
-    try:
-        data = response.json()
-    except Exception as exc:
-        raise BrightDataError("Bright Data SERP returned invalid JSON") from exc
-    organic = data.get("organic", []) if isinstance(data, dict) else []
-    urls: List[str] = []
-    for item in organic:
-        if not isinstance(item, dict):
-            continue
-        link = item.get("link")
-        if isinstance(link, str) and link:
-            urls.append(link)
-            if len(urls) >= limit:
-                break
-    return urls
+
+    last_error: Optional[Exception] = None
+    for attempt_idx, (token, zone) in enumerate(pairs):
+        payload = {"zone": zone, "url": search_url, "format": "raw"}
+        try:
+            with httpx.Client(timeout=min(timeout_seconds, 60.0)) as client:
+                response = _post_with_rate_limit_retry(
+                    client,
+                    f"{BRIGHT_DATA_BASE_URL}/request",
+                    headers=_headers(token),
+                    payload=payload,
+                )
+            if not (200 <= response.status_code < 300):
+                _raise_http_error(response, "SERP request")
+            try:
+                data = response.json()
+            except Exception as exc:
+                raise BrightDataError("Bright Data SERP returned invalid JSON") from exc
+            organic = data.get("organic", []) if isinstance(data, dict) else []
+            urls: List[str] = []
+            for item in organic:
+                if not isinstance(item, dict):
+                    continue
+                link = item.get("link")
+                if isinstance(link, str) and link:
+                    urls.append(link)
+                    if len(urls) >= limit:
+                        break
+            return urls
+        except (BrightDataError, Exception) as exc:
+            last_error = exc
+            if attempt_idx + 1 < len(pairs):
+                logger.warning(
+                    "Bright Data SERP failed with token %s / zone %s: %s. Failing over to next token...",
+                    _mask_token(token), zone, exc,
+                )
+                continue
+            raise
+
+    if last_error:
+        raise last_error
+    return []

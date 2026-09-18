@@ -4,6 +4,9 @@ from unittest.mock import MagicMock, patch
 
 from src.scrapers.bright_data_client import (
     BrightDataError,
+    get_bright_data_tokens,
+    get_bright_data_serp_zones,
+    _get_rotating_tokens,
     run_dataset,
     search_instagram_urls,
 )
@@ -142,6 +145,110 @@ class TestBrightDataClient(unittest.TestCase):
         self.assertEqual(payload["zone"], "test-serp-zone")
         self.assertIn("google.com/search?", payload["url"])
 
+
+
+class TestBrightDataMultiToken(unittest.TestCase):
+    def setUp(self):
+        os.environ["BRIGHT_DATA_API_TOKEN"] = "token1, token2, token3"
+        os.environ["BRIGHT_DATA_SERP_ZONE"] = "zone1, zone2"
+
+    def tearDown(self):
+        os.environ.pop("BRIGHT_DATA_API_TOKEN", None)
+        os.environ.pop("BRIGHT_DATA_SERP_ZONE", None)
+
+    @staticmethod
+    def _response(status, payload):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = payload
+        resp.headers = {}
+        resp.text = ""
+        return resp
+
+    def test_parses_comma_separated_tokens_and_zones(self):
+        tokens = get_bright_data_tokens()
+        self.assertEqual(tokens, ["token1", "token2", "token3"])
+        zones = get_bright_data_serp_zones()
+        self.assertEqual(zones, ["zone1", "zone2"])
+
+    def test_run_dataset_rotates_and_distributes_across_tokens(self):
+        success_resp = self._response(200, [{"id": "1"}])
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.__exit__.return_value = False
+        client.post.return_value = success_resp
+
+        used_auth_headers = []
+
+        def record_post(*args, **kwargs):
+            used_auth_headers.append(kwargs.get("headers", {}).get("Authorization"))
+            return success_resp
+
+        client.post.side_effect = record_post
+
+        with patch("src.scrapers.bright_data_client.httpx.Client", return_value=client):
+            for _ in range(3):
+                run_dataset("dataset", [{"url": "https://example.com"}])
+
+        # Verify that all 3 tokens were used across 3 calls
+        used_tokens = [h.replace("Bearer ", "") for h in used_auth_headers]
+        self.assertEqual(set(used_tokens), {"token1", "token2", "token3"})
+
+    def test_run_dataset_fails_over_to_next_token_when_first_fails(self):
+        fail_resp = self._response(429, {"message": "rate limit exceeded"})
+        success_resp = self._response(200, [{"id": "recovered"}])
+
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.__exit__.return_value = False
+
+        auth_attempts = []
+
+        def side_effect(*args, **kwargs):
+            auth = kwargs.get("headers", {}).get("Authorization", "").replace("Bearer ", "")
+            auth_attempts.append(auth)
+            # Fail all calls made with the initial token
+            if auth == auth_attempts[0]:
+                return fail_resp
+            return success_resp
+
+        client.post.side_effect = side_effect
+
+        with patch("src.scrapers.bright_data_client.httpx.Client", return_value=client), \
+             patch("src.scrapers.bright_data_client.time.sleep"):
+            records = run_dataset("dataset", [{"url": "https://example.com"}])
+
+        self.assertEqual(records, [{"id": "recovered"}])
+        # Must have rotated to a different token
+        distinct_tokens = list(dict.fromkeys(auth_attempts))
+        self.assertGreaterEqual(len(distinct_tokens), 2)
+        self.assertNotEqual(distinct_tokens[0], distinct_tokens[1])
+    def test_search_instagram_urls_fails_over_to_next_token_and_zone(self):
+        fail_resp = self._response(500, {"message": "server error"})
+        success_resp = self._response(200, {"organic": [{"link": "https://www.instagram.com/p/abc/"}]})
+
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.__exit__.return_value = False
+
+        call_pairs = []
+
+        def side_effect(*args, **kwargs):
+            auth = kwargs.get("headers", {}).get("Authorization", "").replace("Bearer ", "")
+            zone = kwargs.get("json", {}).get("zone", "")
+            call_pairs.append((auth, zone))
+            if len(call_pairs) == 1:
+                return fail_resp
+            return success_resp
+
+        client.post.side_effect = side_effect
+
+        with patch("src.scrapers.bright_data_client.httpx.Client", return_value=client):
+            links = search_instagram_urls('site:instagram.com "test"', limit=1)
+
+        self.assertEqual(links, ["https://www.instagram.com/p/abc/"])
+        self.assertGreaterEqual(len(call_pairs), 2)
+        self.assertNotEqual(call_pairs[0][0], call_pairs[1][0])
 
 if __name__ == "__main__":
     unittest.main()

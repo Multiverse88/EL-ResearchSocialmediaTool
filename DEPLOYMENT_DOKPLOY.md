@@ -37,10 +37,10 @@ CLAUDE_MODEL=claude-3-5-sonnet-20241022
 DATABASE_PATH=/app/data/social_media.db
 
 # 3. Bright Data Scraper APIs (direkomendasikan)
+# Mendukung multi-token (pisahkan dengan koma: token1,token2) untuk rotasi & failover otomatis
 BRIGHT_DATA_API_TOKEN=isi-dengan-token-bright-data
-# Wajib untuk pencarian topik Instagram; gunakan nama SERP API zone dari Bright Data
+# Wajib untuk pencarian topik Instagram; gunakan nama SERP API zone dari Bright Data (bisa koma: zone1,zone2)
 BRIGHT_DATA_SERP_ZONE=nama-zone-serp
-
 # 4. Kredensial fallback self-hosted (opsional; gunakan akun burner jika ada)
 INSTAGRAM_USERNAME=
 INSTAGRAM_PASSWORD=
@@ -50,11 +50,15 @@ TIKTOK_MS_TOKEN=
 MAX_POSTS_PER_SCRAPE=30
 ```
 
-Aktifkan dataset **Instagram Posts**, **Instagram Reels**, dan **TikTok Posts** di
-Bright Data. Scrape profil dan topik TikTok memakai dataset tersebut langsung.
+Aktifkan dataset **Instagram Posts**, **Instagram Reels**, **TikTok Posts**, dan **Threads Posts** di
+Bright Data. Scrape profil dan topik TikTok/Threads memakai dataset tersebut langsung.
 Pencarian topik Instagram memakai SERP API zone untuk menemukan URL post/reel,
 kemudian mengambil detail kontennya lewat dataset Instagram.
 
+**Tips Multi-Token**: Jika akun trial sering terkena limit antrian (concurrency limit / 429), Anda
+dapat mendaftarkan akun Bright Data kedua dan memasukkan kedua token dipisahkan koma di
+`BRIGHT_DATA_API_TOKEN=token1,token2`. Sistem akan otomatis mendistribusikan request secara
+bergantian (round-robin) dan langsung berpindah ke token berikutnya jika satu akun mengalami timeout atau limit.
 Klik **Save**.
 
 ---
