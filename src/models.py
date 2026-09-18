@@ -9,7 +9,7 @@ import uuid
 @dataclass
 class Account:
     id: str
-    platform: str  # "instagram" | "tiktok"
+    platform: str  # "instagram" | "tiktok" | "threads"
     username: str
     is_own_brand: bool
     created_at: str

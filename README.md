@@ -1,6 +1,6 @@
 # EasyCorp Social Media Intelligence & Open WebUI AI Chat Panel
 
-Sistem terpadu untuk scraping data publik Instagram & TikTok secara terjadwal, menyimpannya di database, dan mengekspos data tersebut lewat chat panel berbasis AI ([Open WebUI](https://openwebui.com/) + Claude API Tool Use) di dashboard internal.
+Sistem terpadu untuk scraping data publik Instagram, TikTok & Threads secara terjadwal, menyimpannya di database, dan mengekspos data tersebut lewat chat panel berbasis AI ([Open WebUI](https://openwebui.com/) + Claude API Tool Use) di dashboard internal.
 
 Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa engagement rata-rata akun EasyLegal bulan ini?"* atau *"Bandingkan performa akun EasyLegal vs kompetitor"*) tanpa perlu membuka spreadsheet atau query database manual.
 
@@ -8,9 +8,9 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
 
 ## 🚀 Fitur Utama
 
-- **Scraping Terjadwal Multi-Platform** (3 tingkat, otomatis pilih yang tersedia):
-  1. **Bright Data Scraper APIs** (jika `BRIGHT_DATA_API_TOKEN` diisi) — Instagram Posts/Reels dan TikTok Posts memakai dataset terkelola Bright Data. Pencarian topik Instagram memakai SERP API (`BRIGHT_DATA_SERP_ZONE`) untuk menemukan URL post/reel lalu mengambil detailnya lewat dataset.
-  2. **Fallback self-hosted**: Instagram via Instaloader (perlu login akun burner untuk mengurangi rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright).
+- **Scraping Terjadwal Multi-Platform** (Instagram, TikTok, Threads):
+  1. **Bright Data Scraper APIs** (jika `BRIGHT_DATA_API_TOKEN` diisi) — Instagram Posts/Reels, TikTok Posts, dan Threads Posts memakai dataset terkelola Bright Data. Pencarian topik Instagram memakai SERP API (`BRIGHT_DATA_SERP_ZONE`) untuk menemukan URL post/reel lalu mengambil detailnya lewat dataset.
+  2. **Fallback self-hosted** (Instagram & TikTok saja — Threads tidak punya fallback gratis): Instagram via Instaloader (perlu login akun burner untuk mengurangi rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright).
   3. **Fallback terakhir**: TikTok raw HTML parsing kalau Playwright/Chromium tidak tersedia.
   - **Scheduler**: Runner siap dipanggil oleh Dokploy Scheduled Jobs (`0 2 * * *`).
 - **AI Chat Panel Berbasis Web ([Open WebUI](https://openwebui.com/))**:

@@ -25,8 +25,8 @@ def handle_post_accounts(db: Database, payload: Dict[str, Any]) -> Dict[str, Any
 
     if not platform or not username:
         return {"status": "error", "message": "platform and username are required"}
-    if platform not in ("instagram", "tiktok"):
-        return {"status": "error", "message": "platform must be 'instagram' or 'tiktok'"}
+    if platform not in ("instagram", "tiktok", "threads"):
+        return {"status": "error", "message": "platform must be 'instagram', 'tiktok', or 'threads'"}
 
     account = Account.create(
         platform=platform,

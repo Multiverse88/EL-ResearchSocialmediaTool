@@ -94,6 +94,35 @@ def normalize_tiktok_post(raw: Dict[str, Any], account_id: str, scraped_at: Opti
     )
 
 
+def normalize_threads_post(raw: Dict[str, Any], account_id: str, scraped_at: Optional[str] = None) -> Post:
+    platform_post_id = str(raw.get("id") or "")
+    caption = str(raw.get("caption") or "")
+    media_url = str(raw.get("media_url") or "")
+
+    likes = int(raw.get("likes") or 0)
+    comments = int(raw.get("comments") or 0)
+    views = raw.get("views")
+    views_int = int(views) if views is not None else None
+
+    posted_at = _parse_timestamp(raw.get("posted_at"))
+    scraped_at = scraped_at or datetime.now(timezone.utc).isoformat()
+
+    return Post.create(
+        account_id=account_id,
+        platform_post_id=platform_post_id,
+        caption=caption,
+        media_url=media_url,
+        likes=likes,
+        comments=comments,
+        views=views_int,
+        posted_at=posted_at,
+        scraped_at=scraped_at,
+        platform="threads",
+        topic=str(raw.get("topic", "")),
+        post_url=str(raw.get("post_url") or ""),
+    )
+
+
 def ingest_scraped_batch(
     db: Database,
     platform: str,
@@ -110,6 +139,8 @@ def ingest_scraped_batch(
                 post = normalize_instagram_post(raw, account.id, scraped_at=batch_scraped_at)
             elif platform == "tiktok":
                 post = normalize_tiktok_post(raw, account.id, scraped_at=batch_scraped_at)
+            elif platform == "threads":
+                post = normalize_threads_post(raw, account.id, scraped_at=batch_scraped_at)
             else:
                 raise ValueError(f"Unsupported platform: {platform}")
             norm_posts.append(post)

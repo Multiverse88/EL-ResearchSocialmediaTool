@@ -163,7 +163,7 @@ app.add_middleware(
 
 # Pydantic Request Models
 class CreateAccountRequest(BaseModel):
-    platform: str = Field(..., description="Platform: instagram | tiktok")
+    platform: str = Field(..., description="Platform: instagram | tiktok | threads")
     username: str = Field(..., description="Account username without @")
     is_own_brand: bool = Field(False, description="True if EasyCorp brand, False if competitor")
 
@@ -230,8 +230,8 @@ def search_accounts(q: str = Query(..., description="Keyword untuk mencari usern
 def create_account(payload: CreateAccountRequest):
     """POST /accounts - Tambah akun baru untuk discrape."""
     platform = payload.platform.strip().lower()
-    if platform not in ("instagram", "tiktok"):
-        raise HTTPException(status_code=400, detail="Platform must be 'instagram' or 'tiktok'")
+    if platform not in ("instagram", "tiktok", "threads"):
+        raise HTTPException(status_code=400, detail="Platform must be 'instagram', 'tiktok', or 'threads'")
 
     account = Account.create(
         platform=platform,
@@ -352,7 +352,7 @@ def create_topic(payload: CreateTopicRequest):
 @app.get("/topics/summary")
 def get_topic_summary_endpoint(
     keyword: str = Query(..., description="Kata kunci yang ingin diriset"),
-    platform: Optional[str] = Query(None, description="Filter: instagram | tiktok"),
+    platform: Optional[str] = Query(None, description="Filter: instagram | tiktok | threads"),
 ):
     """GET /topics/summary?keyword=&platform= - Riset performa topik dan postingan viral."""
     summary = get_db().get_topic_summary(keyword=keyword, platform=platform)

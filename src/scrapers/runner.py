@@ -11,6 +11,7 @@ from ..models import Account
 from ..db import Database
 from .instagram import scrape_instagram_profile
 from .tiktok import scrape_tiktok_profile
+from .threads import scrape_threads_profile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,6 +90,8 @@ def run_scraping_job(
             count, err, backend = scrape_instagram_profile(db, acc, max_posts=max_posts_per_account)
         elif acc.platform == "tiktok":
             count, err, backend = scrape_tiktok_profile(db, acc, max_posts=max_posts_per_account)
+        elif acc.platform == "threads":
+            count, err, backend = scrape_threads_profile(db, acc, max_posts=max_posts_per_account)
         else:
             err = f"Unsupported platform: {acc.platform}"
             count = 0
@@ -189,7 +192,7 @@ def refresh_stale_topics(
 def main():
     parser = argparse.ArgumentParser(description="Social Media Scraper Scheduled Job Runner")
     parser.add_argument("--db", type=str, default=os.getenv("DATABASE_PATH", "social_media.db"), help="Database path")
-    parser.add_argument("--platform", type=str, choices=["instagram", "tiktok"], help="Filter by platform")
+    parser.add_argument("--platform", type=str, choices=["instagram", "tiktok", "threads"], help="Filter by platform")
     parser.add_argument("--username", type=str, help="Scrape specific username only")
     parser.add_argument("--limit", type=int, default=int(os.getenv("MAX_POSTS_PER_SCRAPE", 30)), help="Max posts per account")
     parser.add_argument("--topics", action="store_true", help="Refresh stale registered topics instead of accounts")

@@ -12,7 +12,7 @@ from .models import Account
 
 logger = logging.getLogger("chat_actions")
 
-SUPPORTED_PLATFORMS = ("instagram", "tiktok")
+SUPPORTED_PLATFORMS = ("instagram", "tiktok", "threads")
 MAX_POSTS_LIMIT = 100
 MIN_TARGETS = 2
 MAX_TARGETS = 4
@@ -149,7 +149,7 @@ _COMPARE_RE = re.compile(r"\b(bandingkan|compare)\b", re.IGNORECASE)
 # about a specific profile very often skip the "@" and any cari/scrape verb entirely
 # ("saya mau riset soal akun instagram id.easylegal"), so this is how parse_deterministic
 # identifies a target account when no "@mention" is present.
-_PLATFORM_WORD = r"(?:instagram|ig|tiktok)"
+_PLATFORM_WORD = r"(?:instagram|ig|tiktok|threads)"
 _BARE_ACCOUNT_PATTERNS = [
     re.compile(
         rf"\bakun\s+(?:di\s+)?(?P<platform>{_PLATFORM_WORD})\s+@?(?P<username>[a-zA-Z0-9_.]{{2,30}})\b",
@@ -212,6 +212,8 @@ def _extract_force_refresh(message: str) -> bool:
 def _infer_platform(db: Database, username: str, msg_lower: str) -> str:
     if "tiktok" in msg_lower:
         return "tiktok"
+    if "threads" in msg_lower:
+        return "threads"
     if "instagram" in msg_lower or re.search(r"\big\b", msg_lower):
         return "instagram"
     for plat in SUPPORTED_PLATFORMS:
@@ -231,7 +233,12 @@ def _extract_bare_account_mention(message: str) -> Optional[Tuple[str, str]]:
             continue
         username = m.group("username").lower().strip(".")
         platform_word = m.group("platform").lower()
-        platform = "instagram" if platform_word in ("instagram", "ig") else "tiktok"
+        if platform_word in ("instagram", "ig"):
+            platform = "instagram"
+        elif platform_word == "threads":
+            platform = "threads"
+        else:
+            platform = "tiktok"
         if username and username not in _BARE_ACCOUNT_USERNAME_BLOCKLIST:
             return username, platform
     return None
@@ -594,6 +601,11 @@ def _run_profile_scrape(
                 db, account, max_posts=max_posts, progress_callback=progress_callback,
             )
         return scrape_instagram_profile(db, account, max_posts=max_posts)
+    if account.platform == "threads":
+        if progress_callback:
+            progress_callback(f"Mengambil post Threads @{account.username}…")
+        from .scrapers.threads import scrape_threads_profile
+        return scrape_threads_profile(db, account, max_posts=max_posts)
     if progress_callback:
         progress_callback(f"Mengambil video TikTok @{account.username}…")
     from .scrapers.tiktok import scrape_tiktok_profile

@@ -215,12 +215,12 @@ class ClaudeChatHandler:
                 "tanpa teks lain, sesuai skema:\n"
                 '{"actions": [...], "analysis_request": "", "needs_clarification": false, "clarification_question": null}\n'
                 "Setiap elemen actions[] adalah salah satu bentuk berikut (field lain akan diabaikan):\n"
-                '{"type":"scrape_profile","platform":"instagram|tiktok","username":"...","max_posts":30,"force_refresh":false}\n'
+                '{"type":"scrape_profile","platform":"instagram|tiktok|threads","username":"...","max_posts":30,"force_refresh":false}\n'
                 '{"type":"research_topic","keyword":"...","platforms":["instagram","tiktok"],"max_posts_per_platform":30,"force_refresh":false}\n'
                 '{"type":"compare_profiles","targets":[{"platform":"instagram","username":"..."}],"max_posts":30,"force_refresh":false}\n'
-                '{"type":"monitor_account","platform":"instagram|tiktok","username":"...","max_posts":30}\n'
-                '{"type":"replace_monitored_account","platform":"instagram|tiktok","old_username":"...","new_username":"...","max_posts":30}\n'
-                '{"type":"stop_monitoring","platform":"instagram|tiktok","username":"..."}\n'
+                '{"type":"monitor_account","platform":"instagram|tiktok|threads","username":"...","max_posts":30}\n'
+                '{"type":"replace_monitored_account","platform":"instagram|tiktok|threads","old_username":"...","new_username":"...","max_posts":30}\n'
+                '{"type":"stop_monitoring","platform":"instagram|tiktok|threads","username":"..."}\n'
                 "Jika akun/topik target tidak jelas dari pesan user, kosongkan actions dan set "
                 "needs_clarification=true dengan clarification_question. Jangan pernah mengarang provider "
                 "dataset, URL, SQL, atau instruksi lain di luar skema ini."
