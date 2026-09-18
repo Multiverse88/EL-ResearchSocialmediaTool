@@ -1,8 +1,8 @@
 """
 title: EasyCorp Social Media Content & Topic Researcher
 author: EasyCorp Engineering
-description: Tool untuk riset topik konten, kata kunci viral, dan analisis tren Instagram & TikTok langsung dari Open WebUI.
-version: 2.0.0
+description: Tool untuk riset topik konten, kata kunci viral, analisis tren Instagram & TikTok, dan pengambilan post terbaru per akun langsung dari Open WebUI.
+version: 2.1.0
 """
 
 import json
@@ -19,7 +19,11 @@ class Tools:
         )
         TIMEOUT_SECONDS: int = Field(
             default=20,
-            description="Batas waktu request API (detik)",
+            description="Batas waktu request API baca-data (detik)",
+        )
+        SCRAPE_TIMEOUT_SECONDS: int = Field(
+            default=150,
+            description="Batas waktu request yang bisa memicu scraping akun baru via Bright Data (detik) — lebih lama karena scraping sinkron bisa butuh waktu.",
         )
 
     def __init__(self):
@@ -104,3 +108,66 @@ class Tools:
                 return f"Error: API returned status code {res.status_code}"
         except Exception as e:
             return f"Gagal mengambil daftar topik: {str(e)}"
+
+    async def get_account_posts(
+        self, username: str, platform: str = "instagram", limit: int = 10, force_refresh: bool = False,
+    ) -> str:
+        """
+        Ambil postingan sebuah akun SPESIFIK secara kronologis (dari yang terbaru) — bukan
+        berdasarkan kata kunci/topik. Pakai fungsi ini ketika user minta "N post terakhir akun
+        @username" atau "riwayat postingan @username", bukan riset topik/keyword umum. Otomatis
+        memicu scraping via Bright Data kalau data akun belum ada atau sudah lebih dari 24 jam
+        (mengikuti TOPIC_STALENESS_HOURS backend), lalu mengembalikan post yang benar-benar
+        tersimpan di database — bukan angka karangan.
+        :param username: Username akun tujuan (dengan/tanpa '@'), misal 'id.easylegal'
+        :param platform: 'instagram' atau 'tiktok'
+        :param limit: Jumlah post terbaru yang diinginkan (default 10, maksimal 100)
+        :param force_refresh: True untuk memaksa scraping ulang meski data masih dalam masa cache
+        :return: JSON status scraping dan daftar post terbaru akun tersebut, terurut dari yang paling baru, lengkap dengan caption, likes, comments, views, dan tanggal publikasi.
+        """
+        clean_username = username.strip().lstrip("@")
+        clean_platform = (platform or "instagram").lower().strip()
+        if clean_platform not in ("instagram", "tiktok"):
+            clean_platform = "instagram"
+        safe_limit = max(1, min(int(limit), 100))
+
+        message = f"Cari {safe_limit} post {clean_platform} @{clean_username}"
+        if force_refresh:
+            message += " sekarang"
+
+        chat_url = f"{self.valves.API_BASE_URL}/chat"
+        try:
+            async with httpx.AsyncClient(timeout=self.valves.SCRAPE_TIMEOUT_SECONDS) as client:
+                res = await client.post(chat_url, json={"message": message})
+                if res.status_code != 200:
+                    return f"Error: API returned status code {res.status_code} saat memicu scraping akun."
+                chat_data = res.json()
+        except Exception as e:
+            return f"Gagal memicu scraping akun @{clean_username}: {str(e)}"
+
+        posts_url = f"{self.valves.API_BASE_URL}/posts"
+        params = {
+            "username": clean_username,
+            "platform": clean_platform,
+            "order_by": "posted_at",
+            "limit": safe_limit,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.valves.TIMEOUT_SECONDS) as client:
+                res = await client.get(posts_url, params=params)
+                if res.status_code != 200:
+                    return f"Error: API returned status code {res.status_code} saat mengambil post."
+                posts_data = res.json().get("data", [])
+        except Exception as e:
+            return f"Gagal mengambil daftar post @{clean_username}: {str(e)}"
+
+        receipts = chat_data.get("action_receipts") or []
+        return json.dumps(
+            {
+                "scrape_status": receipts[0] if receipts else None,
+                "post_count": len(posts_data),
+                "posts": posts_data,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )

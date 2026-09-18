@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     is_own_brand INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     monitoring_enabled INTEGER NOT NULL DEFAULT 1,
+    follower_count INTEGER,
     UNIQUE(platform, username)
 );
 
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS posts (
     platform_post_id TEXT NOT NULL,
     caption TEXT NOT NULL,
     media_url TEXT NOT NULL,
+    post_url TEXT NOT NULL DEFAULT '',
     likes INTEGER NOT NULL DEFAULT 0,
     comments INTEGER NOT NULL DEFAULT 0,
     views INTEGER,
@@ -106,6 +108,8 @@ class Database:
                     self.conn.execute("ALTER TABLE posts ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
                 if cols and "content_type" not in cols:
                     self.conn.execute("ALTER TABLE posts ADD COLUMN content_type TEXT NOT NULL DEFAULT ''")
+                if cols and "post_url" not in cols:
+                    self.conn.execute("ALTER TABLE posts ADD COLUMN post_url TEXT NOT NULL DEFAULT ''")
             except Exception:
                 pass
             try:
@@ -113,6 +117,8 @@ class Database:
                 cols = [row[1] for row in cursor.fetchall()]
                 if cols and "monitoring_enabled" not in cols:
                     self.conn.execute("ALTER TABLE accounts ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 1")
+                if cols and "follower_count" not in cols:
+                    self.conn.execute("ALTER TABLE accounts ADD COLUMN follower_count INTEGER")
             except Exception:
                 pass
             self.conn.executescript(SCHEMA_SQL)
@@ -128,7 +134,7 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(platform, username) DO UPDATE SET
                     is_own_brand = excluded.is_own_brand
-                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled;
+                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count;
                 """,
                 (
                     account.id, account.platform, account.username, int(account.is_own_brand),
@@ -143,6 +149,7 @@ class Database:
                 is_own_brand=bool(row[3]),
                 created_at=row[4],
                 monitoring_enabled=bool(row[5]),
+                follower_count=row[6],
             )
             self._accounts_by_id[saved.id] = saved
             self._accounts_by_plat_user[(saved.platform, saved.username)] = saved
@@ -154,7 +161,7 @@ class Database:
         if account_id in self._accounts_by_id:
             return self._accounts_by_id[account_id]
         cursor = self.conn.execute(
-            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts WHERE id = ?",
+            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count FROM accounts WHERE id = ?",
             (account_id,),
         )
         row = cursor.fetchone()
@@ -167,6 +174,7 @@ class Database:
             is_own_brand=bool(row[3]),
             created_at=row[4],
             monitoring_enabled=bool(row[5]),
+            follower_count=row[6],
         )
         self._accounts_by_id[acc.id] = acc
         self._accounts_by_plat_user[(acc.platform, acc.username)] = acc
@@ -180,7 +188,7 @@ class Database:
         if cache_key in self._accounts_by_plat_user:
             return self._accounts_by_plat_user[cache_key]
         cursor = self.conn.execute(
-            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts WHERE platform = ? AND username = ?",
+            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count FROM accounts WHERE platform = ? AND username = ?",
             (norm_plat, norm_user),
         )
         row = cursor.fetchone()
@@ -193,6 +201,7 @@ class Database:
             is_own_brand=bool(row[3]),
             created_at=row[4],
             monitoring_enabled=bool(row[5]),
+            follower_count=row[6],
         )
         self._accounts_by_id[acc.id] = acc
         self._accounts_by_plat_user[cache_key] = acc
@@ -203,7 +212,7 @@ class Database:
         if self._all_accounts is not None:
             return self._all_accounts
         cursor = self.conn.execute(
-            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts ORDER BY username ASC"
+            "SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count FROM accounts ORDER BY username ASC"
         )
         accounts = [
             Account(
@@ -213,6 +222,7 @@ class Database:
                 is_own_brand=bool(row[3]),
                 created_at=row[4],
                 monitoring_enabled=bool(row[5]),
+                follower_count=row[6],
             )
             for row in cursor.fetchall()
         ]
@@ -237,11 +247,14 @@ class Database:
             params.append(platform.lower())
         where_sql = "WHERE " + " AND ".join(clauses)
         cursor = self.conn.execute(
-            f"SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled FROM accounts {where_sql} ORDER BY username ASC LIMIT ?",
+            f"SELECT id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count FROM accounts {where_sql} ORDER BY username ASC LIMIT ?",
             [*params, limit],
         )
         return [
-            Account(id=r[0], platform=r[1], username=r[2], is_own_brand=bool(r[3]), created_at=r[4], monitoring_enabled=bool(r[5]))
+            Account(
+                id=r[0], platform=r[1], username=r[2], is_own_brand=bool(r[3]), created_at=r[4],
+                monitoring_enabled=bool(r[5]), follower_count=r[6],
+            )
             for r in cursor.fetchall()
         ]
 
@@ -262,7 +275,7 @@ class Database:
             cursor = self.conn.execute(
                 """
                 UPDATE accounts SET monitoring_enabled = ? WHERE id = ?
-                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled;
+                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count;
                 """,
                 (int(enabled), account_id),
             )
@@ -270,7 +283,37 @@ class Database:
         if not row:
             raise ValueError(f"Account not found: {account_id}")
         self._invalidate_account_caches()
-        return Account(id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4], monitoring_enabled=bool(row[5]))
+        return Account(
+            id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4],
+            monitoring_enabled=bool(row[5]), follower_count=row[6],
+        )
+
+    def update_account_follower_count(self, account_id: str, follower_count: Optional[int]) -> Account:
+        """Records the account's follower count captured during a profile scrape. Read-only
+        metric — does not touch posts or monitoring state. `follower_count=None` is a no-op
+        (some scrape backends don't expose it), so a fresh scrape never clobbers a
+        previously-captured value with unknown data."""
+        if follower_count is None:
+            acc = self.get_account(account_id)
+            if acc is None:
+                raise ValueError(f"Account not found: {account_id}")
+            return acc
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                UPDATE accounts SET follower_count = ? WHERE id = ?
+                RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count;
+                """,
+                (int(follower_count), account_id),
+            )
+            row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Account not found: {account_id}")
+        self._invalidate_account_caches()
+        return Account(
+            id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4],
+            monitoring_enabled=bool(row[5]), follower_count=row[6],
+        )
 
     def rename_account_username(self, account_id: str, new_username: str) -> Account:
         """Renames an account's monitored username in place, preserving its id and post history."""
@@ -280,7 +323,7 @@ class Database:
                 cursor = self.conn.execute(
                     """
                     UPDATE accounts SET username = ? WHERE id = ?
-                    RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled;
+                    RETURNING id, platform, username, is_own_brand, created_at, monitoring_enabled, follower_count;
                     """,
                     (norm_user, account_id),
                 )
@@ -290,7 +333,10 @@ class Database:
         if not row:
             raise ValueError(f"Account not found: {account_id}")
         self._invalidate_account_caches()
-        return Account(id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4], monitoring_enabled=bool(row[5]))
+        return Account(
+            id=row[0], platform=row[1], username=row[2], is_own_brand=bool(row[3]), created_at=row[4],
+            monitoring_enabled=bool(row[5]), follower_count=row[6],
+        )
 
     def get_account_freshness(self, account_id: str) -> Optional[str]:
         """Returns the most recent `scraped_at` timestamp among this account's posts, or None."""
@@ -321,6 +367,7 @@ class Database:
                 p.platform_post_id,
                 p.caption,
                 p.media_url,
+                getattr(p, "post_url", "") or "",
                 p.likes,
                 p.comments,
                 p.views,
@@ -332,14 +379,15 @@ class Database:
                 """
                 INSERT INTO posts (
                     id, account_id, platform, topic, content_type, platform_post_id, caption, media_url,
-                    likes, comments, views, posted_at, scraped_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    post_url, likes, comments, views, posted_at, scraped_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_id, platform_post_id) DO UPDATE SET
                     platform = excluded.platform,
                     topic = excluded.topic,
                     content_type = excluded.content_type,
                     caption = excluded.caption,
                     media_url = excluded.media_url,
+                    post_url = excluded.post_url,
                     likes = excluded.likes,
                     comments = excluded.comments,
                     views = excluded.views,
@@ -429,7 +477,7 @@ class Database:
         sql = f"""
             SELECT
                 id, account_id, platform, platform_post_id, caption, media_url,
-                likes, comments, views, posted_at, scraped_at, topic, content_type
+                likes, comments, views, posted_at, scraped_at, topic, content_type, post_url
             FROM posts
             {where_clause}
             ORDER BY {order_col}
@@ -463,6 +511,7 @@ class Database:
                 "scraped_at": r[10],
                 "topic": r[11],
                 "content_type": r[12],
+                "post_url": r[13],
             })
         is_complete = len(res) < fetch_limit
         if len(self._query_cache) >= 512:

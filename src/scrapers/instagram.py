@@ -90,6 +90,7 @@ def _bright_data_item_to_raw_post(
         views = item.get("views")
     photos = item.get("photos") or []
     first_photo = photos[0] if photos and isinstance(photos[0], str) else ""
+    post_url = url or f"https://www.instagram.com/{'reel' if content_type == 'reel' else 'p'}/{post_id}/"
     return {
         "shortcode": str(post_id),
         "id": str(item.get("post_id") or item.get("id") or post_id),
@@ -101,12 +102,29 @@ def _bright_data_item_to_raw_post(
             or first_photo
             or ""
         ),
+        "post_url": post_url,
         "likes": max(0, int(item.get("likes") or 0)),
         "comments": max(0, int(item.get("num_comments") or item.get("comments") or 0)),
         "video_view_count": max(0, int(views)) if views is not None else None,
         "date_utc": item.get("date_posted") or item.get("datetime"),
         "content_type": content_type,
     }
+
+
+def _extract_follower_count(items: List[Dict[str, Any]]) -> Optional[int]:
+    """Bright Data's Instagram Posts/Reels responses carry the profile's `followers` count
+    on every post record (not a separate call) — pick the first present, non-error value."""
+    for item in items:
+        if item.get("error"):
+            continue
+        followers = item.get("followers")
+        if followers is None:
+            continue
+        try:
+            return int(followers)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _expand_bright_data_records(
@@ -131,6 +149,7 @@ def _instaloader_post_to_raw_post(post: Any, content_type: str) -> Dict[str, Any
         "id": str(post.mediaid),
         "caption": post.caption or "",
         "display_url": post.video_url if content_type == "reel" and post.video_url else post.url or "",
+        "post_url": f"https://www.instagram.com/{'reel' if content_type == 'reel' else 'p'}/{post.shortcode}/",
         "likes": max(0, post.likes),
         "comments": max(0, post.comments),
         "video_view_count": max(0, post.video_view_count) if post.is_video and post.video_view_count is not None else None,
@@ -171,6 +190,9 @@ def _scrape_instagram_profile_bright_data(
         )
         feed_posts = _expand_bright_data_records(feed_items, "feed")
         reel_posts = _expand_bright_data_records(reel_items, "reel")
+        follower_count = _extract_follower_count(feed_items) or _extract_follower_count(reel_items)
+        if follower_count is not None:
+            db.update_account_follower_count(account.id, follower_count)
 
         if progress_callback:
             progress_callback("Menggabungkan Feed dan Reels, menghapus duplikasi, lalu menyimpan data…")

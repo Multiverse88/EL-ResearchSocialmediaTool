@@ -119,6 +119,50 @@ class TestCore(unittest.TestCase):
         self.assertEqual(chat_res["status"], "success")
         self.assertEqual(chat_res["tool_used"], "get_engagement_summary")
 
+    def test_post_url_round_trips_through_upsert_and_query(self):
+        post = Post.create(
+            account_id=self.acc_ig.id,
+            platform_post_id="C99999",
+            caption="Post dengan permalink",
+            media_url="https://img.instagram.com/p/99.jpg",
+            likes=10,
+            comments=1,
+            platform="instagram",
+            post_url="https://www.instagram.com/p/C99999/",
+        )
+        self.db.upsert_posts([post])
+        stored = self.db.query_posts(account_id=self.acc_ig.id, limit=5)
+        self.assertEqual(stored[0]["post_url"], "https://www.instagram.com/p/C99999/")
+
+    def test_rescraping_same_post_updates_permalink_not_duplicates_row(self):
+        first = Post.create(
+            account_id=self.acc_ig.id, platform_post_id="C1", caption="v1",
+            media_url="", likes=1, comments=0, platform="instagram", post_url="",
+        )
+        self.db.upsert_posts([first])
+        second = Post.create(
+            account_id=self.acc_ig.id, platform_post_id="C1", caption="v1",
+            media_url="", likes=5, comments=2, platform="instagram",
+            post_url="https://www.instagram.com/p/C1/",
+        )
+        self.db.upsert_posts([second])
+
+        stored = self.db.query_posts(account_id=self.acc_ig.id, limit=10)
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["likes"], 5)
+        self.assertEqual(stored[0]["post_url"], "https://www.instagram.com/p/C1/")
+
+    def test_update_account_follower_count_persists_and_is_readable(self):
+        updated = self.db.update_account_follower_count(self.acc_ig.id, 42000)
+        self.assertEqual(updated.follower_count, 42000)
+        reloaded = self.db.get_account(self.acc_ig.id)
+        self.assertEqual(reloaded.follower_count, 42000)
+
+    def test_update_account_follower_count_none_is_a_no_op(self):
+        self.db.update_account_follower_count(self.acc_ig.id, 42000)
+        result = self.db.update_account_follower_count(self.acc_ig.id, None)
+        self.assertEqual(result.follower_count, 42000)
+
 
 if __name__ == "__main__":
     unittest.main()

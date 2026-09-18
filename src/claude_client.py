@@ -502,10 +502,14 @@ class ClaudeChatHandler:
         top_posts = db.query_posts(account_id=acc.id, order_by="likes", limit=8)
         recent_posts = db.query_posts(account_id=acc.id, order_by="posted_at", limit=5)
 
+        follower_line = (
+            f"Follower Count: {acc.follower_count:,}\n" if acc.follower_count is not None
+            else "Follower Count: tidak tersedia (belum tertangkap saat scraping terakhir)\n"
+        )
         text = f"""
 [DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL — PROFIL AKUN @{acc.username}]:
 Platform: {acc.platform.upper()}
-Total Postingan Tersimpan (SEMUA post akun ini, TANPA filter kata kunci apa pun): {summary.get('total_posts', 0)} post
+{follower_line}Total Postingan Tersimpan (SEMUA post akun ini, TANPA filter kata kunci apa pun): {summary.get('total_posts', 0)} post
 Rata-Rata Likes per Post: {summary.get('avg_likes', 0):,} likes
 Rata-Rata Comments per Post: {summary.get('avg_comments', 0):,} comments
 Rata-Rata Views: {summary.get('avg_views', 0):,} views
@@ -516,7 +520,8 @@ Postingan dengan Likes Tertinggi:
             for idx, p in enumerate(top_posts, 1):
                 content_label = (p.get("content_type") or "post").upper()
                 v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
-                text += f"{idx}. [{content_label}] \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
+                link_txt = f", Link: {p['post_url']}" if p.get("post_url") else ""
+                text += f"{idx}. [{content_label}] \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']}{link_txt})\n"
         else:
             text += "(Belum ada postingan tersimpan untuk akun ini.)\n"
 
@@ -525,7 +530,8 @@ Postingan dengan Likes Tertinggi:
             for idx, p in enumerate(recent_posts, 1):
                 content_label = (p.get("content_type") or "post").upper()
                 v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
-                text += f"{idx}. [{content_label}] \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']})\n"
+                link_txt = f", Link: {p['post_url']}" if p.get("post_url") else ""
+                text += f"{idx}. [{content_label}] \"{p['caption'][:140]}...\" (Likes: {p['likes']:,}, Views: {v_txt}, Diposting: {p['posted_at']}{link_txt})\n"
         else:
             text += "(Belum ada postingan tersimpan untuk akun ini.)\n"
 
@@ -592,7 +598,8 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
             for idx, p in enumerate(viral_posts, 1):
                 content_label = (p.get("content_type") or "post").upper()
                 v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
-                context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()} · {content_label}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt})\n"
+                link_txt = f", Link: {p['post_url']}" if p.get("post_url") else ""
+                context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()} · {content_label}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt}{link_txt})\n"
 
             context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
             if account_breakdown:
@@ -612,9 +619,8 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
 
         context_text += """
 [KETERBATASAN DATA SAAT INI]:
-- URL/permalink tiap postingan TIDAK tercatat (sistem hanya mencatat metrik, bukan link).
-- Reach/impression spesifik untuk Instagram Reels TIDAK tersedia (sistem hanya mencatat likes, comments, views).
-- Follower count dan frekuensi posting per akun TIDAK tersedia (sistem hanya mencatat jumlah post & likes yang tertangkap scraping, bukan profil akun).
+- Reach/impression spesifik (data private Insights milik pemilik akun) TIDAK tersedia — hanya bisa didapat lewat Meta/TikTok Business API resmi milik pemilik akun, bukan lewat scraping publik manapun.
+- Follower count dan URL/permalink post TERSEDIA untuk data yang di-scrape ulang setelah update sistem ini; data lama yang sudah tersimpan sebelum update mungkin masih kosong pada kedua field tersebut sampai akun tersebut di-scrape ulang.
 Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 """
 

@@ -14,6 +14,7 @@ class Account:
     is_own_brand: bool
     created_at: str
     monitoring_enabled: bool = True
+    follower_count: Optional[int] = None
 
     @classmethod
     def create(
@@ -24,6 +25,7 @@ class Account:
         account_id: Optional[str] = None,
         created_at: Optional[str] = None,
         monitoring_enabled: bool = True,
+        follower_count: Optional[int] = None,
     ) -> Account:
         return cls(
             id=account_id or str(uuid.uuid4()),
@@ -32,6 +34,7 @@ class Account:
             is_own_brand=is_own_brand,
             created_at=created_at or datetime.now(timezone.utc).isoformat(),
             monitoring_enabled=monitoring_enabled,
+            follower_count=follower_count,
         )
 
     def to_dict(self) -> dict:
@@ -77,6 +80,7 @@ class Post:
     platform: str = ""
     topic: str = ""
     content_type: str = ""
+    post_url: str = ""
     @classmethod
     def create(
         cls,
@@ -93,6 +97,7 @@ class Post:
         platform: str = "",
         topic: str = "",
         content_type: str = "",
+        post_url: str = "",
     ) -> Post:
         return cls(
             id=post_id or str(uuid.uuid4()),
@@ -108,6 +113,7 @@ class Post:
             platform=platform.lower() if platform else "",
             topic=topic.strip().lower() if topic else "",
             content_type=content_type.strip().lower(),
+            post_url=post_url or "",
         )
 
     def to_dict(self) -> dict:

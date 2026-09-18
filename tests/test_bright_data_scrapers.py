@@ -64,15 +64,16 @@ class TestBrightDataAdapters(unittest.TestCase):
         self.assertEqual(raw[0]["date_utc"], "2026-09-10T09:00:00.000Z")
 
     def test_tiktok_post_maps_metrics(self):
-        raw = tt_module._bright_data_item_to_raw_post(TT_POSTS[0])
+        raw = tt_module._bright_data_item_to_raw_post(TT_POSTS[0], "brandacc")
         self.assertEqual(raw["id"], "tt-1")
         self.assertEqual(raw["stats"]["diggCount"], 800)
         self.assertEqual(raw["stats"]["commentCount"], 30)
         self.assertEqual(raw["stats"]["playCount"], 12000)
+        self.assertEqual(raw["post_url"], "https://www.tiktok.com/@brandacc/video/tt-1")
 
     def test_provider_error_and_missing_id_are_rejected(self):
         self.assertIsNone(ig_module._bright_data_item_to_raw_post({"error": "private"}, "feed"))
-        self.assertIsNone(tt_module._bright_data_item_to_raw_post({"description": "missing id"}))
+        self.assertIsNone(tt_module._bright_data_item_to_raw_post({"description": "missing id"}, "brandacc"))
 
 
 class TestBrightDataProfileScrapers(unittest.TestCase):
@@ -126,6 +127,44 @@ class TestBrightDataProfileScrapers(unittest.TestCase):
         self.assertEqual(count, 1)
         posts = self.db.query_posts(account_id=account.id)
         self.assertEqual(posts[0]["views"], 12000)
+
+    def test_instagram_profile_captures_follower_count_from_response(self):
+        account = self.db.upsert_account(Account.create(platform="instagram", username="legalbrand"))
+        ig_reel_with_followers = [{**IG_REELS[0], "followers": 13136}]
+        with patch.object(ig_module, "run_dataset", side_effect=[IG_POST_DISCOVERY, ig_reel_with_followers]):
+            ig_module._scrape_instagram_profile_bright_data(self.db, account, max_posts=10)
+
+        updated = self.db.get_account(account.id)
+        self.assertEqual(updated.follower_count, 13136)
+
+    def test_instagram_post_permalink_prefers_bright_data_url(self):
+        account = self.db.upsert_account(Account.create(platform="instagram", username="legalbrand"))
+        with patch.object(ig_module, "run_dataset", side_effect=[IG_POST_DISCOVERY, IG_REELS]):
+            ig_module._scrape_instagram_profile_bright_data(self.db, account, max_posts=10)
+
+        posts = self.db.query_posts(account_id=account.id, order_by="posted_at", limit=10)
+        self.assertEqual(posts[0]["post_url"], "https://www.instagram.com/reel/REEL1/")
+        self.assertEqual(posts[1]["post_url"], "https://www.instagram.com/p/POST1/")
+
+    def test_tiktok_profile_captures_follower_count_via_profiles_dataset(self):
+        account = self.db.upsert_account(Account.create(platform="tiktok", username="legaltiktok"))
+        with patch.object(tt_module, "run_dataset", side_effect=[
+            TT_POSTS,
+            [{"followers": 85600000}],
+        ]) as run:
+            tt_module._scrape_tiktok_profile_bright_data(self.db, account, max_posts=10)
+
+        updated = self.db.get_account(account.id)
+        self.assertEqual(updated.follower_count, 85600000)
+        self.assertEqual(run.call_args_list[1].args[0], "gd_l1villgoiiidt09ci")
+
+    def test_tiktok_post_permalink_constructed_from_username(self):
+        account = self.db.upsert_account(Account.create(platform="tiktok", username="legaltiktok"))
+        with patch.object(tt_module, "run_dataset", side_effect=[TT_POSTS, []]):
+            tt_module._scrape_tiktok_profile_bright_data(self.db, account, max_posts=10)
+
+        posts = self.db.query_posts(account_id=account.id)
+        self.assertEqual(posts[0]["post_url"], "https://www.tiktok.com/@legaltiktok/video/tt-1")
 
 
 class TestBrightDataTopicScrapers(unittest.TestCase):

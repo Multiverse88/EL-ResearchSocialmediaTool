@@ -13,6 +13,7 @@ from ..db import Database
 from ..ingest import ingest_scraped_batch
 from .bright_data_client import (
     TIKTOK_POSTS_DATASET_ID,
+    TIKTOK_PROFILES_DATASET_ID,
     is_bright_data_configured,
     run_dataset,
 )
@@ -59,7 +60,7 @@ def _extract_sigi_or_hydration_data(html: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _bright_data_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _bright_data_item_to_raw_post(item: Dict[str, Any], username: str) -> Optional[Dict[str, Any]]:
     """Adapts a Bright Data TikTok post record to the ingestion contract."""
     if item.get("error"):
         return None
@@ -73,6 +74,10 @@ def _bright_data_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, An
             "downloadAddr": item.get("video_url") or item.get("web_video_url") or "",
             "playAddr": "",
         },
+        "post_url": (
+            item.get("url")
+            or (f"https://www.tiktok.com/@{username}/video/{video_id}" if username else "")
+        ),
         "stats": {
             "diggCount": max(0, int(item.get("digg_count") or item.get("likes") or 0)),
             "commentCount": max(0, int(item.get("comment_count") or item.get("comments") or 0)),
@@ -80,6 +85,26 @@ def _bright_data_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, An
         },
         "createTime": item.get("create_time") or item.get("created_at"),
     }
+
+
+def _fetch_tiktok_follower_count(username: str) -> Optional[int]:
+    """Fetches follower count via Bright Data's TikTok Profiles dataset (separate from the
+    Posts dataset, which doesn't carry follower count per video). Best-effort: any failure
+    here is logged and swallowed — a missing follower count never fails the post scrape."""
+    try:
+        items = run_dataset(
+            TIKTOK_PROFILES_DATASET_ID,
+            [{"url": f"https://www.tiktok.com/@{username}"}],
+        )
+        for item in items:
+            if item.get("error"):
+                continue
+            followers = item.get("followers")
+            if followers is not None:
+                return int(followers)
+    except Exception as exc:
+        logger.warning("Bright Data TikTok follower count fetch failed for @%s: %s", username, exc)
+    return None
 
 
 def _scrape_tiktok_profile_bright_data(
@@ -101,7 +126,7 @@ def _scrape_tiktok_profile_bright_data(
             query={"type": "discover_new", "discover_by": "profile_url"},
         )
         raw_posts = [
-            post for post in (_bright_data_item_to_raw_post(item) for item in items)
+            post for post in (_bright_data_item_to_raw_post(item, username) for item in items)
             if post is not None
         ][:max_posts]
         if not raw_posts:
@@ -114,6 +139,10 @@ def _scrape_tiktok_profile_bright_data(
                 ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg)
             )
             return 0, err_msg
+
+        follower_count = _fetch_tiktok_follower_count(username)
+        if follower_count is not None:
+            db.update_account_follower_count(account.id, follower_count)
 
         inserted_count, err = ingest_scraped_batch(
             db=db,
@@ -250,6 +279,7 @@ def _scrape_tiktok_profile_html(
                         "downloadAddr": item.get("video", {}).get("downloadAddr") or "",
                         "playAddr": item.get("video", {}).get("playAddr") or "",
                     },
+                    "post_url": f"https://www.tiktok.com/@{username}/video/{item.get('id') or item_id}",
                     "stats": {
                         "diggCount": item.get("stats", {}).get("diggCount") or item.get("diggCount", 0),
                         "commentCount": item.get("stats", {}).get("commentCount") or item.get("commentCount", 0),

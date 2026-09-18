@@ -180,6 +180,7 @@ def _scrape_instagram_topic_bright_data(
                 platform="instagram",
                 topic=label,
                 content_type=content_type,
+                post_url=raw.get("post_url", ""),
             ))
             if len(norm_posts) >= max_posts:
                 break
@@ -332,7 +333,7 @@ def _scrape_tiktok_topic_bright_data(
         norm_posts: List[Post] = []
         seen_ids = set()
         for item in items:
-            raw = _bright_data_tiktok_post(item)
+            raw = _bright_data_tiktok_post(item, item.get("profile_username") or "")
             if not raw or raw["id"] in seen_ids:
                 continue
             if not _passes_since(str(raw.get("createTime") or ""), since):
@@ -352,6 +353,7 @@ def _scrape_tiktok_topic_bright_data(
                 posted_at=str(raw["createTime"]),
                 platform="tiktok",
                 topic=label,
+                post_url=raw.get("post_url", ""),
             ))
             if len(norm_posts) >= max_posts:
                 break

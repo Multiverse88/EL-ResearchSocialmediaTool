@@ -34,6 +34,7 @@ def _tiktokapi_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]
         return None
     stats = item.get("stats") or item.get("statsV2") or {}
     video_meta = item.get("video") or {}
+    author_username = _tiktokapi_item_author_username(item)
     return {
         "id": str(video_id),
         "desc": item.get("desc") or "",
@@ -41,6 +42,9 @@ def _tiktokapi_item_to_raw_post(item: Dict[str, Any]) -> Optional[Dict[str, Any]
             "downloadAddr": video_meta.get("downloadAddr") or "",
             "playAddr": video_meta.get("playAddr") or "",
         },
+        "post_url": (
+            f"https://www.tiktok.com/@{author_username}/video/{video_id}" if author_username else ""
+        ),
         "stats": {
             "diggCount": int(stats.get("diggCount") or 0),
             "commentCount": int(stats.get("commentCount") or 0),

@@ -15,6 +15,7 @@ BRIGHT_DATA_BASE_URL = "https://api.brightdata.com"
 INSTAGRAM_POSTS_DATASET_ID = "gd_lk5ns7kz21pck8jpis"
 INSTAGRAM_REELS_DATASET_ID = "gd_lyclm20il4r5helnj"
 TIKTOK_POSTS_DATASET_ID = "gd_lu702nij2f790tmv9h"
+TIKTOK_PROFILES_DATASET_ID = "gd_l1villgoiiidt09ci"
 
 
 class BrightDataError(RuntimeError):
@@ -130,12 +131,17 @@ def _get_with_retry(
 
 
 def _snapshot_id(response: httpx.Response) -> Optional[str]:
+    """Detects a genuine async-accepted response. Only trusts the `snapshot_id` key —
+    NEVER falls back to a generic `id` field, since real data records (e.g. a TikTok
+    account's own `id`, an Instagram post's `id`) legitimately carry that key too, which
+    previously caused a synchronously-complete single-record response to be misdetected
+    as an async trigger and polled against a snapshot that never existed."""
     try:
         payload = response.json()
     except Exception:
         return None
     if isinstance(payload, dict):
-        value = payload.get("snapshot_id") or payload.get("id")
+        value = payload.get("snapshot_id")
         return str(value) if value else None
     return None
 
