@@ -249,7 +249,31 @@ def resolve_account_reference(db: Database, message: str) -> Optional[Tuple[str,
         username, platform = bare
         if db.get_account_by_username(platform, username):
             return platform, username
+    known = _extract_known_account_mentions(db, message)
+    if len(known) == 1:
+        return known[0]
     return None
+
+
+def _extract_known_account_mentions(db: Database, message: str) -> List[Tuple[str, str]]:
+    """Finds account usernames from `message` that are already registered in the DB —
+    no "@" or platform word required. A bare mention of an already-known account
+    ("riset akun id.easytax dan id.easyoffice", no "@", no "instagram"/"tiktok" word) is
+    unambiguous account-reference intent, unlike an arbitrary word: it only matches exact
+    usernames that genuinely exist as registered accounts, so it can't misfire on random
+    text the way a bare-word heuristic without that anchor would.
+    """
+    tokens = set(re.findall(r"[a-zA-Z0-9_.]+", message.lower()))
+    if not tokens:
+        return []
+    found: List[Tuple[str, str]] = []
+    seen = set()
+    for acc in db.list_accounts():
+        candidate = acc.username.lower().lstrip("@")
+        if candidate in tokens and candidate not in seen:
+            found.append((acc.platform, acc.username))
+            seen.add(candidate)
+    return found
 
 
 def _resolve_brand_account(db: Database, message: str) -> Optional[Account]:
@@ -332,21 +356,33 @@ def parse_deterministic(db: Database, message: str) -> Optional[ActionPlan]:
             clarification_question="Akun mana yang ingin mulai dimonitor?",
         )
 
-    # 4. Compare profiles
+    # 4. Compare profiles — explicit "bandingkan" with 2+ @mentions, OR 2+ already-known
+    # account usernames named bare (no "@", no "bandingkan") like "riset akun id.easytax
+    # dan id.easyoffice": naming several registered accounts together is itself compare-like
+    # intent, since there's no single subject to fall through to section 5 for.
+    known_accounts = _extract_known_account_mentions(db, message)
     if _COMPARE_RE.search(msg_lower) and len(mentions) >= 2:
-        max_posts = _extract_max_posts(message)
-        force_refresh = _extract_force_refresh(message)
         targets = [
             {"platform": _infer_platform(db, u, msg_lower), "username": u}
             for u in mentions[:MAX_TARGETS]
         ]
+    elif not mentions and len(known_accounts) >= 2:
+        targets = [
+            {"platform": p, "username": u} for p, u in known_accounts[:MAX_TARGETS]
+        ]
+    else:
+        targets = None
+    if targets:
+        max_posts = _extract_max_posts(message)
+        force_refresh = _extract_force_refresh(message)
         return ActionPlan(actions=[CompareProfilesAction(
             targets=targets, max_posts=max_posts, force_refresh=force_refresh,
         )])
 
-    # 5. Scrape a specific profile — naming an account (via "@mention" or the bare
-    # "akun <platform> <name>" phrasing) is itself unambiguous "tell me about this
-    # profile" intent; no cari/scrape/riset verb is required on top of it.
+    # 5. Scrape a specific profile — naming an account (via "@mention", the bare
+    # "akun <platform> <name>" phrasing, or a single already-known account named bare)
+    # is itself unambiguous "tell me about this profile" intent; no cari/scrape/riset
+    # verb is required on top of it.
     username = None
     platform = None
     if mentions:
@@ -356,6 +392,8 @@ def parse_deterministic(db: Database, message: str) -> Optional[ActionPlan]:
         bare = _extract_bare_account_mention(message)
         if bare:
             username, platform = bare
+        elif len(known_accounts) == 1:
+            platform, username = known_accounts[0]
 
     if username:
         max_posts = _extract_max_posts(message)
@@ -365,7 +403,6 @@ def parse_deterministic(db: Database, message: str) -> Optional[ActionPlan]:
         )])
 
     return None
-
 
 # ---------------------------------------------------------------------------
 # AI-planner plan decoding (planner itself lives in claude_client.py — this

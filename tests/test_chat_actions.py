@@ -294,5 +294,47 @@ class TestDeterministicParsingEdgeCases(unittest.TestCase):
         self.assertEqual(planner_calls, [])
 
 
+class TestBareKnownAccountMention(unittest.TestCase):
+    """Regression test: "coba riset tentang akun id.easytax dan id.easyoffice" — no "@",
+    no "instagram"/"tiktok" word — previously matched nothing in parse_deterministic, so
+    chat_actions never triggered a scrape at all and the AI just described whatever
+    (often empty) data already happened to be in the DB. A bare mention of an ALREADY
+    REGISTERED account username is now recognized without requiring "@" or a platform
+    word, since it can only match real, existing usernames — not arbitrary text."""
+
+    def setUp(self):
+        self.db = Database(":memory:")
+        self.orch = ChatActionOrchestrator(ttl_hours=6)
+        self.db.upsert_account(Account.create(platform="instagram", username="id.easytax", is_own_brand=True))
+        self.db.upsert_account(Account.create(platform="instagram", username="id.easyoffice", is_own_brand=True))
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_single_known_account_bare_mention_triggers_scrape(self):
+        self.db.upsert_account(Account.create(platform="instagram", username="id.easylegal", is_own_brand=True))
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(2, None, "bright_data")) as mock_scrape:
+            result = self.orch.plan_and_execute(self.db, "coba riset tentang akun id.easylegal", [])
+
+        mock_scrape.assert_called_once()
+        self.assertEqual(len(result.receipts), 1)
+        self.assertTrue(result.receipts[0].success)
+
+    def test_two_known_accounts_bare_mention_triggers_scrape_for_both(self):
+        with patch.object(ig_module, "scrape_instagram_profile", return_value=(1, None, "bright_data")) as mock_scrape:
+            result = self.orch.plan_and_execute(
+                self.db, "coba riset tentang akun id.easytax dan id.easyoffice", [],
+            )
+
+        self.assertEqual(mock_scrape.call_count, 2)
+        self.assertEqual(len(result.receipts), 2)
+        self.assertTrue(all(r.success for r in result.receipts))
+
+    def test_unregistered_bare_word_does_not_falsely_trigger_scrape(self):
+        with patch.object(ig_module, "scrape_instagram_profile") as mock_scrape:
+            self.orch.plan_and_execute(self.db, "coba riset tentang topik legalitas umkm", [])
+        mock_scrape.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
