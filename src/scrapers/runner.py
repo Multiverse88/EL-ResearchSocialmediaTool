@@ -19,32 +19,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger("scrapers.runner")
 
-# Default brand accounts of EasyCorp to ensure exist on startup
+# The 5 official brand accounts of EasyCorp
 DEFAULT_SEEDS = [
     ("instagram", "id.easylegal", True),
-    ("tiktok", "easylegal_tiktok", True),
+    ("threads", "id.easylegal", True),
+    ("tiktok", "id.easylegal", True),
     ("instagram", "id.easytax", True),
-    ("tiktok", "easytax_tiktok", True),
     ("instagram", "id.easyoffice", True),
-    ("instagram", "easylegal_id", True),
-    ("instagram", "easytax_id", True),
-    ("instagram", "easyoffice_id", True),
 ]
 
 
 def seed_default_accounts_if_empty(db: Database) -> List[Account]:
-    """Ensures all default EasyCorp brand accounts exist in the database,
-    inserting any that are missing even if the database already has other accounts."""
+    """Ensures the 5 official EasyCorp brand accounts exist in the database,
+    and strictly deactivates legacy/dead handles from active monitoring."""
     created = []
     for platform, username, is_own in DEFAULT_SEEDS:
         if not db.get_account_by_username(platform, username):
-            acc = Account.create(platform=platform, username=username, is_own_brand=is_own)
+            acc = Account.create(platform=platform, username=username, is_own_brand=is_own, monitoring_enabled=True)
             saved = db.upsert_account(acc)
             created.append(saved)
-    # Clean up: only brand accounts should have monitoring_enabled=1.
-    # Competitor creator accounts discovered from topic scraping should not be scheduled profile scrapes.
+
     with db.conn:
+        # Demote any competitor creator or legacy dead handle from active monitoring
         db.conn.execute("UPDATE accounts SET monitoring_enabled = 0 WHERE is_own_brand = 0")
+        db.conn.execute(
+            "UPDATE accounts SET monitoring_enabled = 0, is_own_brand = 0 "
+            "WHERE username IN ('easylegal_id', 'easylegal_tiktok', 'easytax_id', 'easytax_tiktok', 'easyoffice_id', 'smartlegalid')"
+        )
+        # Ensure only the 5 official accounts have active monitoring
+        for plat, user, _ in DEFAULT_SEEDS:
+            db.conn.execute(
+                "UPDATE accounts SET monitoring_enabled = 1, is_own_brand = 1 WHERE platform = ? AND username = ?",
+                (plat, user),
+            )
+
     return db.list_accounts()
 
 

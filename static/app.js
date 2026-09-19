@@ -563,16 +563,15 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshLogsBtn.addEventListener("click", loadLogs);
 
   triggerScrapeBtn.addEventListener("click", async () => {
-    if (!confirm("Jalankan scraping sekarang untuk semua akun yang dimonitor?")) return;
+    if (!confirm("Jalankan scraping sekarang untuk 5 akun resmi brand EasyCorp dan topik kompetitor?")) return;
     try {
-      const res = await fetch("/scrape/run", {
+      const res = await fetch("/api/cron/daily-sync?max_posts=10&background=true", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
       });
       const data = await res.json();
-      alert(data.message || "Proses scraping dimulai di background!");
-      loadLogs();
+      alert("Proses scraping paralel dimulai di background untuk @id.easylegal, @id.easytax, @id.easyoffice, dan topik kompetitor!");
+      setTimeout(loadLogs, 3000);
+      setTimeout(loadBrandStats, 15000);
     } catch (err) {
       alert(`Gagal memicu scraping: ${err.message}`);
     }
