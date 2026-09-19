@@ -457,6 +457,12 @@ body {
   border: 1px solid #cbd5e1;
 }
 
+.badge-th {
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid #334155;
+}
+
 .badge-brand {
   background: #eff6ff;
   color: #1d4ed8;

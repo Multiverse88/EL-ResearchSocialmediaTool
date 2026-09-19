@@ -56,14 +56,131 @@ document.addEventListener("DOMContentLoaded", () => {
       if (targetPane) targetPane.classList.add("active");
 
       // Auto load data on tab switch
-      if (tab.dataset.tab === "topics-tab") loadTopics();
+      if (tab.dataset.tab === "topics-tab") {
+        loadBrandStats();
+        loadTopics();
+      }
       if (tab.dataset.tab === "accounts-tab") loadAccounts();
       if (tab.dataset.tab === "posts-tab") loadPosts();
       if (tab.dataset.tab === "logs-tab") loadLogs();
     });
   });
 
-  // --- 2. Topic & Content Research ---
+  // --- 2. Brand Overview & Statistics (EasyLegal, EasyTax, EasyOffice) ---
+  let selectedBrand = "all";
+  let selectedPlatform = "all";
+
+  function setupBrandFilters() {
+    document.querySelectorAll(".brand-filter-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".brand-filter-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedBrand = btn.dataset.brand;
+        loadBrandStats();
+      });
+    });
+
+    document.querySelectorAll(".plat-filter-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".plat-filter-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedPlatform = btn.dataset.plat;
+        loadBrandStats();
+      });
+    });
+  }
+
+  async function loadBrandStats() {
+    const tableBody = document.getElementById("brand-posts-table-body");
+    if (tableBody) {
+      tableBody.innerHTML = '<tr><td colspan="8" class="text-center">Memuat statistik akun brand...</td></tr>';
+    }
+
+    try {
+      const res = await fetch(`/api/analytics/brand-stats?brand=${encodeURIComponent(selectedBrand)}&platform=${encodeURIComponent(selectedPlatform)}`);
+      const json = await res.json();
+      if (json.status !== "success") return;
+      const data = json.data;
+
+      // Update KPI Scorecards
+      const kpis = data.kpis || {};
+      const kpiPosts = document.getElementById("brand-kpi-posts");
+      const kpiViews = document.getElementById("brand-kpi-views");
+      const kpiLikes = document.getElementById("brand-kpi-likes");
+      const kpiEr = document.getElementById("brand-kpi-er");
+
+      if (kpiPosts) kpiPosts.textContent = Number(kpis.total_posts || 0).toLocaleString();
+      if (kpiViews) kpiViews.textContent = Number(kpis.total_views || 0).toLocaleString();
+      if (kpiLikes) kpiLikes.textContent = Number(kpis.avg_likes || 0).toLocaleString();
+      if (kpiEr) kpiEr.textContent = `${kpis.avg_engagement_rate || 0}%`;
+
+      // Update Mini Platform Cards
+      const plats = data.platforms || {};
+      const ig = plats.instagram || {};
+      const th = plats.threads || {};
+      const tt = plats.tiktok || {};
+
+      const migPosts = document.getElementById("mini-ig-posts");
+      const migViews = document.getElementById("mini-ig-views");
+      const migEr = document.getElementById("mini-ig-er");
+      if (migPosts) migPosts.textContent = `${ig.posts || 0} post`;
+      if (migViews) migViews.textContent = Number(ig.views || 0).toLocaleString();
+      if (migEr) migEr.textContent = `${ig.avg_er || 0}%`;
+
+      const mthPosts = document.getElementById("mini-th-posts");
+      const mthLikes = document.getElementById("mini-th-likes");
+      const mthEr = document.getElementById("mini-th-er");
+      if (mthPosts) mthPosts.textContent = `${th.posts || 0} post`;
+      if (mthLikes) mthLikes.textContent = Number(th.likes || 0).toLocaleString();
+      if (mthEr) mthEr.textContent = `${th.avg_er || 0}%`;
+
+      const mttPosts = document.getElementById("mini-tt-posts");
+      const mttViews = document.getElementById("mini-tt-views");
+      const mttEr = document.getElementById("mini-tt-er");
+      if (mttPosts) mttPosts.textContent = `${tt.posts || 0} video`;
+      if (mttViews) mttViews.textContent = Number(tt.views || 0).toLocaleString();
+      if (mttEr) mttEr.textContent = `${tt.avg_er || 0}%`;
+
+      // Update Posts Table
+      const countLabel = document.getElementById("brand-posts-count-label");
+      if (countLabel) countLabel.textContent = `${(data.posts || []).length} postingan`;
+
+      if (!data.posts || data.posts.length === 0) {
+        if (tableBody) {
+          tableBody.innerHTML = '<tr><td colspan="8" class="text-center">Belum ada postingan tersimpan untuk filter ini. Klik Scrape Sekarang atau jalankan sync harian jam 8 pagi.</td></tr>';
+        }
+        return;
+      }
+
+      if (tableBody) {
+        tableBody.innerHTML = data.posts
+          .map((p) => {
+            const platBadge = p.platform === "instagram" ? "badge-ig" : (p.platform === "tiktok" ? "badge-tt" : "badge-th");
+            const formattedDate = p.posted_at ? p.posted_at.substring(0, 10) : "-";
+            const hookText = p.hook || p.caption || "-";
+            const linkUrl = p.permalink || "#";
+            return `
+              <tr>
+                <td><span class="badge ${platBadge}">${(p.platform || "").toUpperCase()}</span></td>
+                <td><strong>@${p.username || "-"}</strong></td>
+                <td title="${(p.caption || "").replace(/"/g, '&quot;')}"><div style="max-width: 380px; font-weight: 600;">${hookText}</div></td>
+                <td><strong style="color: #2563eb;">${Number(p.likes || 0).toLocaleString()}</strong></td>
+                <td>${Number(p.comments || 0).toLocaleString()}</td>
+                <td>${Number(p.views || 0).toLocaleString()}</td>
+                <td>${formattedDate}</td>
+                <td><a href="${linkUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration: none;">Lihat ↗</a></td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+    } catch (err) {
+      if (tableBody) {
+        tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Gagal memuat data brand: ${err.message}</td></tr>`;
+      }
+    }
+  }
+
   async function loadTopics() {
     try {
       const res = await fetch("/topics");
@@ -471,14 +588,15 @@ document.addEventListener("DOMContentLoaded", () => {
         loadTopics();
         loadAccounts();
         loadPosts();
-        researchTopic("pendirian PT");
+        loadBrandStats();
       } catch (err) {
         alert(`Gagal memuat sample data: ${err.message}`);
       }
     });
   }
 
-  // Initial load
+  // Initial load: display 3 EasyCorp brand accounts across Instagram, Threads, and TikTok
+  setupBrandFilters();
+  loadBrandStats();
   loadTopics();
-  researchTopic("pendirian PT");
 });

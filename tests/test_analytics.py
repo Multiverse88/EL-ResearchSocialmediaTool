@@ -185,6 +185,28 @@ class TestAnalyticsEngine(unittest.TestCase):
         self.assertEqual(resp.json()["status"], "success")
         self.assertIn("brand_performance", resp.json()["data"])
 
+        # 5. Brand stats (EasyLegal, EasyTax, EasyOffice)
+        resp = client.get("/api/analytics/brand-stats?brand=all&platform=all")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["status"], "success")
+        self.assertIn("kpis", resp.json()["data"])
+        self.assertIn("platforms", resp.json()["data"])
+        self.assertIn("brands", resp.json()["data"])
+        self.assertIn("posts", resp.json()["data"])
+
+    def test_get_brand_overview_stats(self):
+        from src.analytics import get_brand_overview_stats
+        stats = get_brand_overview_stats(self.db, brand="all", platform="all")
+        self.assertIn("kpis", stats)
+        self.assertEqual(stats["kpis"]["total_posts"], 2)  # 2 brand posts seeded in setUp
+        self.assertEqual(stats["kpis"]["total_views"], 4000)  # 3000 + 1000
+        self.assertIn("easylegal", stats["brands"])
+        self.assertEqual(len(stats["posts"]), 2)
+
+        # Filter by easylegal specifically
+        legal_stats = get_brand_overview_stats(self.db, brand="easylegal", platform="all")
+        self.assertEqual(legal_stats["kpis"]["total_posts"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

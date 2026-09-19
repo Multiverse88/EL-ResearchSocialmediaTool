@@ -38,8 +38,8 @@
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
       <button class="nav-tab active" data-tab="topics-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-        Riset Topik & Kata Kunci (<span id="topic-count">0</span>)
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
+        Statistik Brand (EasyLegal, EasyTax, EasyOffice)
       </button>
       <button class="nav-tab" data-tab="chat-tab">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
@@ -66,74 +66,119 @@
       <section id="topics-tab" class="tab-pane active">
         <div class="section-header">
           <div>
-            <h2>Riset Topik & Kata Kunci Media Sosial</h2>
-            <p>Analisis tren kata kunci, benchmark performa likes/views, dan referensi konten viral di Instagram & TikTok.</p>
+            <h2>Statistik Akun Resmi EasyCorp</h2>
+            <p>Data performa dan analitik konten media sosial @id.easylegal, @id.easytax, dan @id.easyoffice di Instagram, Threads, dan TikTok.</p>
           </div>
         </div>
 
-        <!-- Search Bar for Topic -->
-        <div class="filter-bar">
-          <input type="text" id="topic-search-input" placeholder="Ketik kata kunci/topik (misal: pendirian PT, virtual office, pajak UMKM, izin OSS)..." />
-          <button id="topic-search-btn" class="btn btn-primary">Riset Kata Kunci</button>
+        <!-- Brand & Platform Controls -->
+        <div style="display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 24px; justify-content: space-between; align-items: center;">
+          <div class="chat-prompts" style="margin-bottom: 0; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 10px;">
+            <span class="prompts-label">Pilih Akun Brand:</span>
+            <button class="prompt-chip brand-filter-btn active" data-brand="all">🌟 Semua Brand</button>
+            <button class="prompt-chip brand-filter-btn" data-brand="easylegal">⚖️ EasyLegal</button>
+            <button class="prompt-chip brand-filter-btn" data-brand="easytax">💼 EasyTax</button>
+            <button class="prompt-chip brand-filter-btn" data-brand="easyoffice">🏢 EasyOffice</button>
+          </div>
+          <div class="chat-prompts" style="margin-bottom: 0; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 10px;">
+            <span class="prompts-label">Platform:</span>
+            <button class="prompt-chip plat-filter-btn active" data-plat="all">Semua</button>
+            <button class="prompt-chip plat-filter-btn" data-plat="instagram">📸 Instagram</button>
+            <button class="prompt-chip plat-filter-btn" data-plat="threads">🧵 Threads</button>
+            <button class="prompt-chip plat-filter-btn" data-plat="tiktok">🎵 TikTok</button>
+          </div>
         </div>
 
-        <!-- Quick Topics Pills -->
-        <div class="chat-prompts" style="border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 20px;">
-          <span class="prompts-label">Pilih Topik Cepat:</span>
-          <button class="prompt-chip topic-pill" data-keyword="pendirian PT">Pendirian PT</button>
-          <button class="prompt-chip topic-pill" data-keyword="virtual office">Virtual Office</button>
-          <button class="prompt-chip topic-pill" data-keyword="pajak UMKM">Pajak UMKM</button>
-          <button class="prompt-chip topic-pill" data-keyword="izin usaha OSS">Izin OSS</button>
-          <button class="prompt-chip topic-pill" data-keyword="merek dagang HKI">Merek HKI</button>
+        <!-- Brand KPI Overview Cards -->
+        <div class="form-grid" style="margin-bottom: 24px;">
+          <div class="panel-card">
+            <div class="brand-subtitle">Total Postingan Brand</div>
+            <h3 id="brand-kpi-posts" style="font-size: 28px; margin-top: 4px;">-</h3>
+          </div>
+          <div class="panel-card">
+            <div class="brand-subtitle">Total Tayangan (Views)</div>
+            <h3 id="brand-kpi-views" style="font-size: 28px; margin-top: 4px; color: #047857;">-</h3>
+          </div>
+          <div class="panel-card">
+            <div class="brand-subtitle">Rata-Rata Likes per Post</div>
+            <h3 id="brand-kpi-likes" style="font-size: 28px; margin-top: 4px; color: #2563eb;">-</h3>
+          </div>
+          <div class="panel-card">
+            <div class="brand-subtitle">Engagement Rate Rata-Rata</div>
+            <h3 id="brand-kpi-er" style="font-size: 28px; margin-top: 4px; color: #7c3aed;">-</h3>
+          </div>
         </div>
 
-        <!-- Topic Overview Cards -->
-        <div id="topic-results-container">
-          <div class="form-grid" id="topic-stats-grid" style="margin-bottom: 24px;">
-            <div class="panel-card">
-              <div class="brand-subtitle">Total Postingan</div>
-              <h3 id="topic-total-posts" style="font-size: 28px; margin-top: 4px;">-</h3>
-            </div>
-            <div class="panel-card">
-              <div class="brand-subtitle">Rata-Rata Likes</div>
-              <h3 id="topic-avg-likes" style="font-size: 28px; margin-top: 4px; color: #2563eb;">-</h3>
-            </div>
-            <div class="panel-card">
-              <div class="brand-subtitle">Rekor Likes (Viral Peak)</div>
-              <h3 id="topic-max-likes" style="font-size: 28px; margin-top: 4px; color: #db2777;">-</h3>
-            </div>
-            <div class="panel-card">
-              <div class="brand-subtitle">Rata-Rata Views (Video)</div>
-              <h3 id="topic-avg-views" style="font-size: 28px; margin-top: 4px; color: #047857;">-</h3>
-            </div>
-            <div class="panel-card">
-              <div class="brand-subtitle">Engagement Rate</div>
-              <h3 id="topic-er" style="font-size: 28px; margin-top: 4px; color: #7c3aed;">-</h3>
+        <!-- Platform Breakdown Mini Cards -->
+        <div class="form-grid" style="margin-bottom: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+          <div class="panel-card" style="border-left: 4px solid #e1306c;">
+            <h4 style="font-size: 14px; font-weight: 700; color: #e1306c; margin-bottom: 6px;">📸 Instagram (@id.easylegal, @id.easytax, @id.easyoffice)</h4>
+            <div style="font-size: 13px; color: var(--text-muted);">
+              <span>Postingan: <b id="mini-ig-posts" style="color: var(--text-color);">-</b></span> • 
+              <span>Views: <b id="mini-ig-views" style="color: var(--text-color);">-</b></span> • 
+              <span>ER: <b id="mini-ig-er" style="color: var(--text-color);">-</b></span>
             </div>
           </div>
-
-          <!-- Viral Content Table for this Topic -->
-          <div class="table-container">
-            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-              <h3 style="font-size: 16px; font-weight: 700;">Referensi Konten Paling Viral untuk Topik Ini</h3>
-              <button id="ask-ai-topic-btn" class="btn btn-secondary btn-sm">Tanyakan Analisis ke AI</button>
+          <div class="panel-card" style="border-left: 4px solid #000000;">
+            <h4 style="font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 6px;">🧵 Threads (@id.easylegal)</h4>
+            <div style="font-size: 13px; color: var(--text-muted);">
+              <span>Postingan: <b id="mini-th-posts" style="color: var(--text-color);">-</b></span> • 
+              <span>Likes: <b id="mini-th-likes" style="color: var(--text-color);">-</b></span> • 
+              <span>ER: <b id="mini-th-er" style="color: var(--text-color);">-</b></span>
             </div>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Platform</th>
-                  <th>Akun</th>
-                  <th>Caption / Hook</th>
-                  <th>Likes</th>
-                  <th>Komentar</th>
-                  <th>Views</th>
-                  <th>Tanggal</th>
-                </tr>
-              </thead>
-              <tbody id="topic-viral-posts-body">
-                <tr><td colspan="7" class="text-center">Ketik kata kunci di atas atau klik salah satu topik untuk melihat riset.</td></tr>
-              </tbody>
-            </table>
+          </div>
+          <div class="panel-card" style="border-left: 4px solid #00f2fe;">
+            <h4 style="font-size: 14px; font-weight: 700; color: #00f2fe; margin-bottom: 6px;">🎵 TikTok (@id.easylegal)</h4>
+            <div style="font-size: 13px; color: var(--text-muted);">
+              <span>Video: <b id="mini-tt-posts" style="color: var(--text-color);">-</b></span> • 
+              <span>Views: <b id="mini-tt-views" style="color: var(--text-color);">-</b></span> • 
+              <span>ER: <b id="mini-tt-er" style="color: var(--text-color);">-</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Brand Posts Table -->
+        <div class="table-container" style="margin-bottom: 36px;">
+          <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="font-size: 16px; font-weight: 700;">Daftar Postingan Akun Brand EasyCorp</h3>
+            <span style="font-size: 12px; color: var(--text-muted);" id="brand-posts-count-label">- postingan</span>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Akun</th>
+                <th>Caption / Hook</th>
+                <th>Likes</th>
+                <th>Komentar</th>
+                <th>Views</th>
+                <th>Tanggal</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody id="brand-posts-table-body">
+              <tr><td colspan="8" class="text-center">Memuat data akun brand...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Collapsible Competitor & Topic Research Section -->
+        <div style="border-top: 2px dashed var(--border-color); padding-top: 24px;">
+          <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 6px;">🔍 Riset Topik & Benchmark Kompetitor Tambahan</h3>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">Cari kata kunci spesifik untuk melihat tren konten dan benchmark dari kreator luar di topik yang sama.</p>
+          
+          <div class="filter-bar">
+            <input type="text" id="topic-search-input" placeholder="Ketik topik (misal: pendirian PT, virtual office, konsultasi pajak, izin OSS)..." />
+            <button id="topic-search-btn" class="btn btn-secondary">Cari Topik</button>
+          </div>
+
+          <div class="chat-prompts" style="border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px;">
+            <span class="prompts-label">Pilih Cepat:</span>
+            <button class="prompt-chip topic-pill" data-keyword="pendirian PT">Pendirian PT</button>
+            <button class="prompt-chip topic-pill" data-keyword="virtual office">Virtual Office</button>
+            <button class="prompt-chip topic-pill" data-keyword="konsultasi pajak">Konsultasi Pajak</button>
+            <button class="prompt-chip topic-pill" data-keyword="izin usaha OSS">Izin OSS</button>
+            <button class="prompt-chip topic-pill" data-keyword="merek dagang HKI">Merek HKI</button>
           </div>
         </div>
       </section>

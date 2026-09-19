@@ -677,6 +677,18 @@ def api_analytics_competitor_comparison(
     return {"status": "success", "data": data}
 
 
+@app.get("/api/analytics/brand-stats")
+def api_analytics_brand_stats(
+    brand: str = Query("all", description="all | easylegal | easytax | easyoffice"),
+    platform: str = Query("all", description="all | instagram | threads | tiktok"),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Returns consolidated metrics and posts for EasyLegal, EasyTax, and EasyOffice across Instagram, Threads, and TikTok."""
+    from .analytics import get_brand_overview_stats
+    data = get_brand_overview_stats(get_db(), brand=brand, platform=platform, limit=limit)
+    return {"status": "success", "data": data}
+
+
 @app.get("/analytics", response_class=HTMLResponse)
 def serve_analytics_dashboard():
     """Serves the Looker Studio-style interactive social media analytics dashboard."""

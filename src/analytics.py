@@ -357,3 +357,165 @@ def get_competitor_comparison(
         },
         "topics_distribution": topic_map,
     }
+
+
+def get_brand_overview_stats(
+    db: Database,
+    brand: Optional[str] = "all",
+    platform: Optional[str] = "all",
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """
+    Returns consolidated social media statistics for the 3 EasyCorp brand accounts
+    (EasyLegal, EasyTax, EasyOffice) across Instagram, Threads, and TikTok.
+    """
+    norm_brand = (brand or "all").strip().lower()
+    norm_plat = (platform or "all").strip().lower()
+
+    brand_filter_sql = ""
+    params: List[Any] = []
+
+    if norm_brand in ("easylegal", "legal"):
+        brand_filter_sql = " AND (a.username LIKE '%easylegal%' OR a.username LIKE '%legal%')"
+    elif norm_brand in ("easytax", "tax", "pajak"):
+        brand_filter_sql = " AND (a.username LIKE '%easytax%' OR a.username LIKE '%tax%')"
+    elif norm_brand in ("easyoffice", "office"):
+        brand_filter_sql = " AND (a.username LIKE '%easyoffice%' OR a.username LIKE '%office%')"
+
+    plat_filter_sql = ""
+    if norm_plat != "all":
+        plat_filter_sql = " AND p.platform = ?"
+        params.append(norm_plat)
+
+    # 1. Overall Brand KPIs
+    sql_kpi = f"""
+        SELECT
+            COUNT(*),
+            COALESCE(SUM(p.views), 0),
+            ROUND(COALESCE(AVG(p.views), 0), 1),
+            COALESCE(SUM(p.likes), 0),
+            ROUND(COALESCE(AVG(p.likes), 0), 1),
+            COALESCE(SUM(p.comments), 0),
+            ROUND(CASE WHEN SUM(p.views) > 0 THEN ((SUM(p.likes) + SUM(p.comments)) * 100.0 / SUM(p.views)) ELSE (SUM(p.likes) + SUM(p.comments)) * 1.0 / MAX(COUNT(*), 1) END, 2) as avg_er
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        WHERE a.is_own_brand = 1 {brand_filter_sql} {plat_filter_sql}
+    """
+    cursor = db.conn.execute(sql_kpi, params)
+    kpi_row = cursor.fetchone() or (0, 0, 0.0, 0, 0.0, 0, 0.0)
+    kpis = {
+        "total_posts": kpi_row[0],
+        "total_views": kpi_row[1],
+        "avg_views": kpi_row[2],
+        "total_likes": kpi_row[3],
+        "avg_likes": kpi_row[4],
+        "total_comments": kpi_row[5],
+        "avg_engagement_rate": kpi_row[6],
+    }
+
+    # 2. Platform Breakdown (Instagram, Threads, TikTok)
+    sql_platforms = f"""
+        SELECT
+            p.platform,
+            COUNT(*),
+            COALESCE(SUM(p.views), 0),
+            COALESCE(SUM(p.likes), 0),
+            ROUND(CASE WHEN SUM(p.views) > 0 THEN ((SUM(p.likes) + SUM(p.comments)) * 100.0 / SUM(p.views)) ELSE (SUM(p.likes) + SUM(p.comments)) * 1.0 / MAX(COUNT(*), 1) END, 2)
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        WHERE a.is_own_brand = 1 {brand_filter_sql}
+        GROUP BY p.platform
+    """
+    cursor = db.conn.execute(sql_platforms)
+    platforms_breakdown = {
+        "instagram": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0},
+        "threads": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0},
+        "tiktok": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0},
+    }
+    for plat, count, views, likes, er in cursor.fetchall():
+        if plat in platforms_breakdown:
+            platforms_breakdown[plat] = {
+                "posts": count,
+                "views": views,
+                "likes": likes,
+                "avg_er": er,
+            }
+
+    # 3. Individual Brand Performance (EasyLegal vs EasyTax vs EasyOffice)
+    brand_groups = [
+        ("easylegal", "EasyLegal", ["id.easylegal", "easylegal_id", "easylegal_tiktok"]),
+        ("easytax", "EasyTax", ["id.easytax", "easytax_id", "easytax_tiktok"]),
+        ("easyoffice", "EasyOffice", ["id.easyoffice", "easyoffice_id"]),
+    ]
+    brands_data = {}
+    for b_key, b_name, handles in brand_groups:
+        placeholders = ",".join("?" * len(handles))
+        sql_b = f"""
+            SELECT
+                COUNT(*),
+                COALESCE(SUM(p.views), 0),
+                ROUND(COALESCE(AVG(p.likes), 0), 1),
+                ROUND(CASE WHEN SUM(p.views) > 0 THEN ((SUM(p.likes) + SUM(p.comments)) * 100.0 / SUM(p.views)) ELSE (SUM(p.likes) + SUM(p.comments)) * 1.0 / MAX(COUNT(*), 1) END, 2)
+            FROM posts p
+            JOIN accounts a ON p.account_id = a.id
+            WHERE a.username IN ({placeholders})
+        """
+        cursor = db.conn.execute(sql_b, handles)
+        brow = cursor.fetchone() or (0, 0, 0.0, 0.0)
+        brands_data[b_key] = {
+            "name": b_name,
+            "total_posts": brow[0],
+            "total_views": brow[1],
+            "avg_likes": brow[2],
+            "avg_er": brow[3],
+        }
+
+    # 4. Posts List
+    sql_posts = f"""
+        SELECT
+            p.id,
+            p.platform_post_id,
+            p.platform,
+            a.username,
+            p.caption,
+            p.likes,
+            p.comments,
+            p.views,
+            ROUND(CASE WHEN p.views > 0 THEN ((p.likes + p.comments) * 100.0 / p.views) ELSE (p.likes + p.comments) * 1.0 END, 2) as engagement_rate,
+            p.posted_at,
+            p.post_url
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        WHERE a.is_own_brand = 1 {brand_filter_sql} {plat_filter_sql}
+        ORDER BY COALESCE(p.views, 0) DESC, p.likes DESC, p.posted_at DESC
+        LIMIT ?
+    """
+    post_params = list(params) + [limit]
+    cursor = db.conn.execute(sql_posts, post_params)
+    posts_list = []
+    for r in cursor.fetchall():
+        caption = r[4] or ""
+        hook = extract_hook_preview(caption)
+        posts_list.append({
+            "id": r[0],
+            "platform_post_id": r[1],
+            "platform": r[2],
+            "username": r[3],
+            "caption": caption,
+            "hook": hook,
+            "likes": r[5],
+            "comments": r[6],
+            "views": r[7] if r[7] is not None else 0,
+            "engagement_rate": r[8],
+            "posted_at": r[9],
+            "permalink": r[10] or f"https://www.{r[2]}.com",
+        })
+
+    return {
+        "selected_brand": norm_brand,
+        "selected_platform": norm_plat,
+        "kpis": kpis,
+        "platforms": platforms_breakdown,
+        "brands": brands_data,
+        "posts": posts_list,
+    }
