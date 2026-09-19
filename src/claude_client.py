@@ -13,7 +13,7 @@ import httpx
 from .db import Database
 from .tools import CLAUDE_TOOLS_SPEC, execute_claude_tool
 from .chat_actions import resolve_account_reference
-
+from .dashboard import get_analytics_dashboard_url
 logger = logging.getLogger("backend.claude")
 
 DEFAULT_SYSTEM_PROMPT = """
@@ -28,7 +28,9 @@ Panduan:
 5. Tulis jawaban dalam paragraf atau bullet Markdown yang mengalir natural. JANGAN PERNAH memakai notasi internal/scratchpad seperti "[nama section] -> skipped: alasan" - itu terlihat seperti catatan debug, bukan jawaban untuk manusia.
 6. Kalau ada bagian yang diminta user tapi datanya memang tidak tersedia di database (lihat blok [KETERBATASAN DATA SAAT INI] di bawah kalau ada), sampaikan itu dalam satu-dua kalimat jujur dan natural (bukan notasi teknis), lalu tetap berikan insight terbaik dari data lain yang memang tersedia. Jangan pernah mengarang angka untuk metrik yang tidak tersedia.
 7. JANGAN PERNAH mengklaim suatu aksi backend terjadi (scraping berhasil, jumlah postingan baru ditarik, sistem berhasil mengambil data, dll) kecuali itu eksplisit tertulis di blok [AKSI YANG BARU DIJALANKAN OLEH SISTEM] atau [DATA FAKTUAL ...] di bawah. Kalau blok itu tidak ada atau tidak menyebut aksi tersebut, berarti aksi itu TIDAK terjadi — katakan itu terus terang, jangan mengarang narasi keberhasilan/kegagalan yang tidak didukung data yang diberikan.
-
+8. Bila relevan dengan pertanyaan tentang perbandingan akun, performa visual, atau statistik tren yang sedang naik, sertakan tautan ke dashboard analitik lengkap di bagian akhir jawaban:
+   📊 **Ingin pantau grafik tren & leaderboard selengkapnya?**
+   [👉 Buka Dashboard Analytics & Statistik Lengkap](URL_DASHBOARD)
 [FRAMEWORK STRATEGI KONTEN — terapkan aktif saat memberi rekomendasi, bukan cuma teori]
 Sumber: Marketing Skills for AI Agents (coreyhaines31/marketingskills, skill "social").
 
@@ -648,8 +650,9 @@ Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user b
 Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 """
 
+        dashboard_url = get_analytics_dashboard_url()
         system_instruction = (
-            f"{DEFAULT_SYSTEM_PROMPT}\n\n"
+            f"{DEFAULT_SYSTEM_PROMPT.replace('URL_DASHBOARD', dashboard_url)}\n\n"
             f"SUBJEK AKTIF PERCAKAPAN: {subject_label}. Pertahankan subjek ini untuk pertanyaan lanjutan "
             f"dan jangan mengubah kata pengisi seperti 'aja', 'nya', 'terbaru', atau 'gimana' menjadi topik baru.\n\n"
             f"Berikut data hasil scraping terkini yang relevan dengan {subject_label}:\n"

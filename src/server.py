@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ from .models import Account
 from .db import Database
 from .claude_client import ClaudeChatHandler
 from .scrapers.runner import run_scraping_job, seed_default_accounts_if_empty
+from .scheduler import DailySyncSchedulerThread, execute_daily_sync
 
 logger = logging.getLogger("server")
 
@@ -40,6 +41,7 @@ def get_claude_handler() -> ClaudeChatHandler:
         _claude_handler = ClaudeChatHandler()
     return _claude_handler
 
+_daily_scheduler: Optional[DailySyncSchedulerThread] = None
 
 # --- Write-endpoint API key auth ---
 # Set API_SECRET_KEY in the environment to require `X-API-Key` (or `Authorization: Bearer`)
@@ -123,9 +125,15 @@ def enforce_chat_rate_limit(request: Request) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_db()
-    get_claude_handler()
+    global _daily_scheduler
+    enable_scheduler = os.getenv("ENABLE_DAILY_SYNC_SCHEDULER", "true").lower() in ("true", "1", "yes")
+    if enable_scheduler and _daily_scheduler is None:
+        _daily_scheduler = DailySyncSchedulerThread(db_factory=get_db)
+        _daily_scheduler.start()
     yield
-    global _db
+    if _daily_scheduler is not None:
+        _daily_scheduler.stop()
+        _daily_scheduler = None
     if _db:
         _db.close()
         logger.info("Database closed.")
@@ -560,6 +568,30 @@ def seed_sample_data(posts_per_account: int = Query(25, ge=5, le=100)):
     }
 
 
+@app.post("/api/cron/daily-sync", dependencies=[Depends(require_api_key)])
+def trigger_daily_sync(
+    max_posts: int = Query(10, ge=1, le=50),
+    background: bool = Query(False),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Triggers the daily sync across EasyCorp brand accounts and core competitor topics.
+    Runs at 08:00 WIB automatically via background daemon, or manually via this endpoint.
+    """
+    current_db = get_db()
+    if background and background_tasks is not None:
+        background_tasks.add_task(execute_daily_sync, current_db, max_posts=max_posts)
+        return {
+            "status": "accepted",
+            "message": "Daily sync job queued for background execution.",
+        }
+    summary = execute_daily_sync(current_db, max_posts=max_posts)
+    return {
+        "status": "success",
+        "data": summary,
+    }
+
+
 @app.post("/scrape/run", dependencies=[Depends(require_api_key)])
 def trigger_scrape(payload: ScrapeRunRequest, background_tasks: BackgroundTasks):
     """
@@ -587,6 +619,65 @@ def get_scrape_logs(limit: int = Query(50, ge=1, le=100)):
         "count": len(logs),
         "data": logs,
     }
+
+
+# --- Analytics & Trends Endpoints ---
+
+@app.get("/api/analytics/overview")
+def api_analytics_overview(days: int = Query(30, ge=1, le=3650)):
+    """Returns high-level KPI overview across all monitored accounts/posts."""
+    from .analytics import get_analytics_overview
+    data = get_analytics_overview(get_db(), timeframe_days=days)
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/analytics/trends")
+def api_analytics_trends(
+    timeframe: str = Query("daily", description="daily | weekly | monthly"),
+    platform: Optional[str] = Query(None, description="instagram | tiktok | threads | all"),
+    is_own_brand: Optional[int] = Query(None, description="1 for brand, 0 for competitor"),
+    days: Optional[int] = Query(None, ge=1, le=3650),
+):
+    """Returns time-series data points for views, likes, and engagement trends."""
+    from .analytics import get_timeseries_trends
+    data = get_timeseries_trends(
+        get_db(), timeframe=timeframe, platform=platform, is_own_brand=is_own_brand, days=days,
+    )
+    return {"status": "success", "count": len(data), "data": data}
+
+
+@app.get("/api/analytics/leaderboard")
+def api_analytics_leaderboard(
+    limit: int = Query(10, ge=1, le=100),
+    days: int = Query(30, ge=1, le=3650),
+    is_own_brand: Optional[int] = Query(None, description="1 for brand, 0 for competitor"),
+    platform: Optional[str] = Query(None),
+    topic: Optional[str] = Query(None),
+):
+    """Returns top-ranking viral posts with hook previews and permalinks."""
+    from .analytics import get_viral_leaderboard
+    data = get_viral_leaderboard(
+        get_db(), limit=limit, days=days, is_own_brand=is_own_brand, platform=platform, topic=topic,
+    )
+    return {"status": "success", "count": len(data), "data": data}
+
+
+@app.get("/api/analytics/competitor-comparison")
+def api_analytics_competitor_comparison(
+    days: int = Query(30, ge=1, le=3650),
+    topic: Optional[str] = Query(None),
+):
+    """Returns side-by-side performance benchmarks between EasyCorp and competitor accounts."""
+    from .analytics import get_competitor_comparison
+    data = get_competitor_comparison(get_db(), days=days, topic=topic)
+    return {"status": "success", "data": data}
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+def serve_analytics_dashboard():
+    """Serves the Looker Studio-style interactive social media analytics dashboard."""
+    from .dashboard import render_analytics_dashboard_html
+    return HTMLResponse(content=render_analytics_dashboard_html())
 
 
 # Static Web Dashboard Mount

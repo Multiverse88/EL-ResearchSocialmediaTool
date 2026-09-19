@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 from .models import Account, Post, ScrapeLog, Topic, TopicScrape
 
@@ -84,12 +85,49 @@ SUMMARY_COLS = (
     "total_posts", "total_likes", "avg_likes", "total_comments",
     "avg_comments", "total_views", "avg_views", "earliest_post", "latest_post"
 )
+class _ThreadSafeConn:
+    """Thread-safe proxy around sqlite3.Connection to prevent concurrent statement collisions."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+        self._lock = threading.RLock()
+
+    def __enter__(self):
+        self._lock.acquire()
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return self._conn.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._lock.release()
+
+    def execute(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.executemany(*args, **kwargs)
+
+    def executescript(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.executescript(*args, **kwargs)
+
+    def close(self):
+        with self._lock:
+            return self._conn.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
 
 
 class Database:
     def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        raw_conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = _ThreadSafeConn(raw_conn)
         self._accounts_by_id: Dict[str, Account] = {}
         self._accounts_by_plat_user: Dict[Tuple[str, str], Account] = {}
         self._account_usernames: Dict[str, str] = {}
@@ -349,6 +387,9 @@ class Database:
 
 
     # Posts & Ingestion
+    def insert_post(self, post: Post) -> int:
+        return self.upsert_posts([post])
+
     def upsert_posts(self, posts: List[Post]) -> int:
         if not posts:
             return 0
@@ -762,8 +803,9 @@ class Database:
                 """,
                 (log.id, log.platform, log.status, log.error_message, log.run_at),
             )
-        return log.id
+            return log.id
 
+    log_scrape = insert_scrape_log
     def list_scrape_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         cursor = self.conn.execute(
             "SELECT id, platform, status, error_message, run_at FROM scrape_logs ORDER BY run_at DESC LIMIT ?",
