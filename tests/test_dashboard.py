@@ -6,12 +6,11 @@ from fastapi.testclient import TestClient
 from src.dashboard import get_analytics_dashboard_url, render_analytics_dashboard_html
 from src.server import app
 
-
 class TestAnalyticsDashboard(unittest.TestCase):
     def test_get_analytics_dashboard_url_default(self):
         with patch.dict(os.environ, {}, clear=True):
             url = get_analytics_dashboard_url()
-            self.assertEqual(url, "/analytics")
+            self.assertEqual(url, "https://sosmed.easycorp.id/analytics")
 
     def test_get_analytics_dashboard_url_custom_domain(self):
         custom = "https://social-analytics.easylegal.my.id/analytics"

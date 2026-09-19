@@ -4,8 +4,8 @@ import os
 
 
 def get_analytics_dashboard_url() -> str:
-    """Returns the external dashboard URL from environment, or default /analytics."""
-    return os.getenv("ANALYTICS_DASHBOARD_URL", "/analytics").strip() or "/analytics"
+    """Returns the external dashboard URL from environment, or default https://sosmed.easycorp.id/analytics."""
+    return os.getenv("ANALYTICS_DASHBOARD_URL", "https://sosmed.easycorp.id/analytics").strip() or "https://sosmed.easycorp.id/analytics"
 
 
 def render_analytics_dashboard_html() -> str:

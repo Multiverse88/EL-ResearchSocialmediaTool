@@ -147,6 +147,7 @@ app = FastAPI(
 )
 
 _default_allowed_origins = [
+    "https://sosmed.easycorp.id",
     "https://easylegal-socialmediaresearchtool-kftevw-d3117c-157-10-252-77.sslip.io",
     "http://100.81.215.57:8000",
     "http://100.81.215.57:3080",
