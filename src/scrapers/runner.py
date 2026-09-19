@@ -41,6 +41,10 @@ def seed_default_accounts_if_empty(db: Database) -> List[Account]:
             acc = Account.create(platform=platform, username=username, is_own_brand=is_own)
             saved = db.upsert_account(acc)
             created.append(saved)
+    # Clean up: only brand accounts should have monitoring_enabled=1.
+    # Competitor creator accounts discovered from topic scraping should not be scheduled profile scrapes.
+    with db.conn:
+        db.conn.execute("UPDATE accounts SET monitoring_enabled = 0 WHERE is_own_brand = 0")
     return db.list_accounts()
 
 

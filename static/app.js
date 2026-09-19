@@ -229,7 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- 4. Accounts Management ---
   async function loadAccounts() {
     try {
-      const res = await fetch("/accounts");
+      const res = await fetch("/accounts?monitored_only=true");
       const json = await res.json();
       const accounts = json.data || [];
       accountCount.textContent = accounts.length;

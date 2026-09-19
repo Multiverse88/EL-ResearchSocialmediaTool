@@ -74,7 +74,7 @@ def _get_or_create_account(db: Database, platform: str, username: str, is_own_br
     acc = db.get_account_by_username(platform, clean_user)
     if acc:
         return acc
-    acc = Account.create(platform=platform, username=clean_user, is_own_brand=is_own_brand)
+    acc = Account.create(platform=platform, username=clean_user, is_own_brand=is_own_brand, monitoring_enabled=is_own_brand)
     return db.upsert_account(acc)
 
 def _parse_iso(value: Optional[str]) -> Optional[datetime]:

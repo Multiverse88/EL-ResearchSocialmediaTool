@@ -210,10 +210,13 @@ def get_health():
 
 
 @app.get("/accounts")
-def list_accounts():
-    """GET /accounts - List akun yang dimonitor."""
+def list_accounts(monitored_only: bool = Query(False)):
+    """GET /accounts - List akun. Pass monitored_only=true to list only actively monitored brand accounts."""
     db_inst = get_db()
-    accounts = db_inst.list_accounts()
+    if monitored_only:
+        accounts = db_inst.list_monitored_accounts()
+    else:
+        accounts = db_inst.list_accounts()
     return {
         "status": "success",
         "count": len(accounts),
