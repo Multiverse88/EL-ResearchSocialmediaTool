@@ -23,20 +23,20 @@ class TestAnalyticsDashboard(unittest.TestCase):
         self.assertIsInstance(html, str)
         self.assertTrue(len(html) > 1000)
         self.assertIn("<!DOCTYPE html>", html)
-        self.assertIn("EasyCorp Social Media Analytics", html)
+        self.assertIn("EasyCorp Social Media Intelligence", html)
         self.assertIn("chart.js", html.lower())
-        self.assertIn("timeseriesChart", html)
-        self.assertIn("competitorChart", html)
-        self.assertIn("leaderboard-body", html)
-        self.assertIn("sync-now-btn", html)
+        self.assertIn("timeSeriesTrajectoryCanvas", html)
+        self.assertIn("topicRadarCanvas", html)
+        self.assertIn("content-table-body", html)
+        self.assertIn("header-sync-btn", html)
 
     def test_get_analytics_endpoint(self):
         client = TestClient(app)
         resp = client.get("/analytics")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/html", resp.headers.get("content-type", ""))
-        self.assertIn("EasyCorp Social Media Analytics", resp.text)
-        self.assertIn("timeseriesChart", resp.text)
+        self.assertIn("EasyCorp Social Media Intelligence", resp.text)
+        self.assertIn("timeSeriesTrajectoryCanvas", resp.text)
 
 
 if __name__ == "__main__":

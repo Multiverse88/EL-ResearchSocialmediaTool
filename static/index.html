@@ -1,369 +1,653 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EasyCorp - Social Media Content Research & AI Intelligence</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css" />
+  <title>EasyCorp Social Media Intelligence & Topic Trend Radar</title>
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,900&f[]=satoshi@700,500,400&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Cabinet Grotesk', 'sans-serif'],
+            sans: ['Satoshi', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              500: '#2563eb',
+              600: '#1d4ed8',
+              900: '#0f172a',
+              950: '#030712',
+            },
+            surface: {
+              card: '#0f172a',
+              cardHover: '#1e293b',
+              border: '#1e293b',
+              borderMuted: '#334155',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #030712;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    .ambient-glow {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.12) 0%, rgba(3, 7, 18, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .frosted-glass {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+    }
+    .bento-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #1e293b;
+      transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .bento-card:hover {
+      border-color: #3b82f6;
+      box-shadow: 0 8px 30px rgba(37, 99, 235, 0.12);
+    }
+    .pill-active {
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+    }
+    .badge-ig { background: rgba(225, 48, 108, 0.15); color: #f43f5e; border: 1px solid rgba(225, 48, 108, 0.3); }
+    .badge-th { background: rgba(255, 255, 255, 0.12); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.25); }
+    .badge-tt { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); }
+  </style>
 </head>
-<body>
-  <div class="app-container">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="brand">
-        <div class="brand-badge">EC</div>
-        <div>
-          <h1 class="brand-title">EasyCorp Social Media Intel & Research</h1>
-          <p class="brand-subtitle">Keyword Trend Analysis, Viral Content Benchmark & Open WebUI AI</p>
-        </div>
+<body class="relative antialiased selection:bg-blue-600 selection:text-white">
+
+  <div class="ambient-glow top-0 left-1/2 -translate-x-1/2"></div>
+  <div class="ambient-glow top-[900px] -left-48"></div>
+
+  <!-- Navigation Bar -->
+  <nav class="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-6xl frosted-glass rounded-full px-6 py-3 flex items-center justify-between shadow-2xl">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-display font-black text-white text-sm">
+        EC
       </div>
-      <div class="header-actions">
-        <a href="https://easylegal-socialmediaresearchtool-kftevw-d3117c-157-10-252-77.sslip.io" target="_blank" class="btn btn-secondary open-webui-btn">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          Buka di Open WebUI
-        </a>
-        <button id="seed-data-btn" class="btn btn-secondary">
-          Isi Sample Data
-        </button>
-        <button id="trigger-scrape-btn" class="btn btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-          Scrape Sekarang
-        </button>
+      <div class="flex flex-col">
+        <span class="font-display font-bold text-sm tracking-tight text-white">EasyCorp Intelligence</span>
+        <span class="text-[10px] text-slate-400 font-medium">Multi-Platform Analytics</span>
       </div>
-    </header>
+    </div>
 
-    <!-- Navigation Tabs -->
-    <nav class="nav-tabs">
-      <button class="nav-tab active" data-tab="topics-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
-        Statistik Brand (EasyLegal, EasyTax, EasyOffice)
-      </button>
-      <button class="nav-tab" data-tab="chat-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-        AI Chat Assistant
-      </button>
-      <button class="nav-tab" data-tab="posts-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-        Data Postingan (<span id="post-count">0</span>)
-      </button>
-      <button class="nav-tab" data-tab="accounts-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        Akun Dimonitor (<span id="account-count">0</span>)
-      </button>
-      <button class="nav-tab" data-tab="logs-tab">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-        Scrape Logs
-      </button>
-    </nav>
+    <!-- Center Brand Switcher -->
+    <div class="hidden md:flex items-center bg-slate-900/80 p-1 rounded-full border border-slate-800 text-xs font-semibold" id="nav-brand-group">
+      <button class="brand-nav-btn px-4 py-1.5 rounded-full transition-all pill-active" data-brand="all">All Brands</button>
+      <button class="brand-nav-btn px-4 py-1.5 rounded-full text-slate-400 hover:text-white transition-all" data-brand="easylegal">EasyLegal</button>
+      <button class="brand-nav-btn px-4 py-1.5 rounded-full text-slate-400 hover:text-white transition-all" data-brand="easytax">EasyTax</button>
+      <button class="brand-nav-btn px-4 py-1.5 rounded-full text-slate-400 hover:text-white transition-all" data-brand="easyoffice">EasyOffice</button>
+    </div>
 
-    <!-- Main Content Area -->
-    <main class="content-container">
+    <!-- Quick Action -->
+    <div class="flex items-center gap-3">
+      <button id="header-sync-btn" class="px-4 py-2 rounded-full text-xs font-bold bg-white text-slate-950 hover:bg-slate-200 transition-colors flex items-center gap-2">
+        <span>Trigger Sync</span>
+      </button>
+      <a href="http://100.81.215.57:3080" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex px-4 py-2 rounded-full text-xs font-bold border border-slate-700 hover:border-slate-500 text-slate-300 transition-colors">
+        Open WebUI
+      </a>
+    </div>
+  </nav>
 
-      <!-- TAB 1: Riset Topik & Kata Kunci Konten -->
-      <section id="topics-tab" class="tab-pane active">
-        <div class="section-header">
+  <main class="overflow-x-hidden w-full max-w-full pt-32 pb-48">
+
+    <!-- ATTENTION: Hero Section -->
+    <section class="max-w-6xl mx-auto px-6 text-center py-16 md:py-24">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase mb-8">
+        Social Media Intelligence Engine
+      </div>
+      <h1 class="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-white tracking-tight leading-[1.1] max-w-5xl mx-auto">
+        Cross-Platform Content Intelligence and Competitor Topic Radar.
+      </h1>
+      <p class="mt-6 text-base sm:text-lg text-slate-400 max-w-3xl mx-auto font-normal leading-relaxed">
+        Performance tracking for @id.easylegal, @id.easytax, and @id.easyoffice across Instagram, Threads, and TikTok, paired with real-time virality benchmarking on shared corporate niches.
+      </p>
+
+      <!-- Platform Filter Pills -->
+      <div class="mt-10 flex flex-wrap justify-center items-center gap-2 text-xs font-bold" id="platform-filter-group">
+        <button class="plat-nav-btn px-4 py-2 rounded-full pill-active transition-all" data-plat="all">All Channels</button>
+        <button class="plat-nav-btn px-4 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all" data-plat="instagram">Instagram</button>
+        <button class="plat-nav-btn px-4 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all" data-plat="threads">Threads</button>
+        <button class="plat-nav-btn px-4 py-2 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all" data-plat="tiktok">TikTok</button>
+      </div>
+    </section>
+
+    <!-- INTEREST: Bento Grid Metrics (Mathematically Interlocked, 0 Gaps) -->
+    <section class="max-w-6xl mx-auto px-6 mb-24">
+      <div class="grid grid-cols-1 md:grid-cols-3 grid-flow-dense gap-5">
+
+        <!-- Card 1: Col 1-2 (Aggregated Velocity & Total Posts) -->
+        <div class="bento-card col-span-1 md:col-span-2 rounded-2xl p-8 flex flex-col justify-between">
           <div>
-            <h2>Statistik Akun Resmi EasyCorp</h2>
-            <p>Data performa dan analitik konten media sosial @id.easylegal, @id.easytax, dan @id.easyoffice di Instagram, Threads, dan TikTok.</p>
-          </div>
-        </div>
-
-        <!-- Brand & Platform Controls -->
-        <div style="display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 24px; justify-content: space-between; align-items: center;">
-          <div class="chat-prompts" style="margin-bottom: 0; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 10px;">
-            <span class="prompts-label">Pilih Akun Brand:</span>
-            <button class="prompt-chip brand-filter-btn active" data-brand="all">🌟 Semua Brand</button>
-            <button class="prompt-chip brand-filter-btn" data-brand="easylegal">⚖️ EasyLegal</button>
-            <button class="prompt-chip brand-filter-btn" data-brand="easytax">💼 EasyTax</button>
-            <button class="prompt-chip brand-filter-btn" data-brand="easyoffice">🏢 EasyOffice</button>
-          </div>
-          <div class="chat-prompts" style="margin-bottom: 0; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 10px;">
-            <span class="prompts-label">Platform:</span>
-            <button class="prompt-chip plat-filter-btn active" data-plat="all">Semua</button>
-            <button class="prompt-chip plat-filter-btn" data-plat="instagram">📸 Instagram</button>
-            <button class="prompt-chip plat-filter-btn" data-plat="threads">🧵 Threads</button>
-            <button class="prompt-chip plat-filter-btn" data-plat="tiktok">🎵 TikTok</button>
-          </div>
-        </div>
-
-        <!-- Brand KPI Overview Cards -->
-        <div class="form-grid" style="margin-bottom: 24px;">
-          <div class="panel-card">
-            <div class="brand-subtitle">Total Postingan Brand</div>
-            <h3 id="brand-kpi-posts" style="font-size: 28px; margin-top: 4px;">-</h3>
-          </div>
-          <div class="panel-card">
-            <div class="brand-subtitle">Total Tayangan (Views)</div>
-            <h3 id="brand-kpi-views" style="font-size: 28px; margin-top: 4px; color: #047857;">-</h3>
-          </div>
-          <div class="panel-card">
-            <div class="brand-subtitle">Rata-Rata Likes per Post</div>
-            <h3 id="brand-kpi-likes" style="font-size: 28px; margin-top: 4px; color: #2563eb;">-</h3>
-          </div>
-          <div class="panel-card">
-            <div class="brand-subtitle">Engagement Rate Rata-Rata</div>
-            <h3 id="brand-kpi-er" style="font-size: 28px; margin-top: 4px; color: #7c3aed;">-</h3>
-          </div>
-        </div>
-
-        <!-- Platform Breakdown Mini Cards -->
-        <div class="form-grid" style="margin-bottom: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
-          <div class="panel-card" style="border-left: 4px solid #e1306c;">
-            <h4 style="font-size: 14px; font-weight: 700; color: #e1306c; margin-bottom: 6px;">📸 Instagram (@id.easylegal, @id.easytax, @id.easyoffice)</h4>
-            <div style="font-size: 13px; color: var(--text-muted);">
-              <span>Postingan: <b id="mini-ig-posts" style="color: var(--text-color);">-</b></span> • 
-              <span>Views: <b id="mini-ig-views" style="color: var(--text-color);">-</b></span> • 
-              <span>ER: <b id="mini-ig-er" style="color: var(--text-color);">-</b></span>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Monitored Performance</span>
+              <span class="text-xs px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 font-semibold border border-blue-500/20">Brand Scope</span>
+            </div>
+            <div class="flex items-baseline gap-4 mt-2">
+              <span class="font-display font-black text-5xl sm:text-6xl text-white tracking-tight" id="kpi-total-views">0</span>
+              <span class="text-sm font-semibold text-slate-400">Total Views Across Video & Feed</span>
             </div>
           </div>
-          <div class="panel-card" style="border-left: 4px solid #000000;">
-            <h4 style="font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 6px;">🧵 Threads (@id.easylegal)</h4>
-            <div style="font-size: 13px; color: var(--text-muted);">
-              <span>Postingan: <b id="mini-th-posts" style="color: var(--text-color);">-</b></span> • 
-              <span>Likes: <b id="mini-th-likes" style="color: var(--text-color);">-</b></span> • 
-              <span>ER: <b id="mini-th-er" style="color: var(--text-color);">-</b></span>
+          <div class="grid grid-cols-3 gap-4 pt-8 mt-8 border-t border-slate-800/80 text-left">
+            <div>
+              <div class="text-xs text-slate-400 font-medium">Published Posts</div>
+              <div class="text-2xl font-display font-bold text-white mt-1" id="kpi-total-posts">0</div>
             </div>
-          </div>
-          <div class="panel-card" style="border-left: 4px solid #00f2fe;">
-            <h4 style="font-size: 14px; font-weight: 700; color: #00f2fe; margin-bottom: 6px;">🎵 TikTok (@id.easylegal)</h4>
-            <div style="font-size: 13px; color: var(--text-muted);">
-              <span>Video: <b id="mini-tt-posts" style="color: var(--text-color);">-</b></span> • 
-              <span>Views: <b id="mini-tt-views" style="color: var(--text-color);">-</b></span> • 
-              <span>ER: <b id="mini-tt-er" style="color: var(--text-color);">-</b></span>
+            <div>
+              <div class="text-xs text-slate-400 font-medium">Average Likes</div>
+              <div class="text-2xl font-display font-bold text-blue-400 mt-1" id="kpi-avg-likes">0</div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-400 font-medium">Engagement Rate</div>
+              <div class="text-2xl font-display font-bold text-emerald-400 mt-1" id="kpi-avg-er">0.0%</div>
             </div>
           </div>
         </div>
 
-        <!-- Brand Posts Table -->
-        <div class="table-container" style="margin-bottom: 36px;">
-          <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="font-size: 16px; font-weight: 700;">Daftar Postingan Akun Brand EasyCorp</h3>
-            <span style="font-size: 12px; color: var(--text-muted);" id="brand-posts-count-label">- postingan</span>
+        <!-- Card 2: Col 3 (Brand vs Competitor Share of Voice) -->
+        <div class="bento-card col-span-1 rounded-2xl p-8 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Niche Share of Voice</span>
+              <span class="text-xs px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/20">Benchmark</span>
+            </div>
+            <div class="font-display font-black text-4xl text-white mt-2" id="kpi-share-ratio">50 / 50</div>
+            <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+              Comparison of EasyCorp content volume against external creator posts within identical topic keywords.
+            </p>
           </div>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Platform</th>
-                <th>Akun</th>
-                <th>Caption / Hook</th>
-                <th>Likes</th>
-                <th>Komentar</th>
-                <th>Views</th>
-                <th>Tanggal</th>
-                <th>Link</th>
-              </tr>
-            </thead>
-            <tbody id="brand-posts-table-body">
-              <tr><td colspan="8" class="text-center">Memuat data akun brand...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Collapsible Competitor & Topic Research Section -->
-        <div style="border-top: 2px dashed var(--border-color); padding-top: 24px;">
-          <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 6px;">🔍 Riset Topik & Benchmark Kompetitor Tambahan</h3>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">Cari kata kunci spesifik untuk melihat tren konten dan benchmark dari kreator luar di topik yang sama.</p>
-          
-          <div class="filter-bar">
-            <input type="text" id="topic-search-input" placeholder="Ketik topik (misal: pendirian PT, virtual office, konsultasi pajak, izin OSS)..." />
-            <button id="topic-search-btn" class="btn btn-secondary">Cari Topik</button>
-          </div>
-
-          <div class="chat-prompts" style="border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px;">
-            <span class="prompts-label">Pilih Cepat:</span>
-            <button class="prompt-chip topic-pill" data-keyword="pendirian PT">Pendirian PT</button>
-            <button class="prompt-chip topic-pill" data-keyword="virtual office">Virtual Office</button>
-            <button class="prompt-chip topic-pill" data-keyword="konsultasi pajak">Konsultasi Pajak</button>
-            <button class="prompt-chip topic-pill" data-keyword="izin usaha OSS">Izin OSS</button>
-            <button class="prompt-chip topic-pill" data-keyword="merek dagang HKI">Merek HKI</button>
+          <div class="pt-6 mt-6 border-t border-slate-800/80 space-y-3 text-xs">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-400">EasyCorp Brand Posts</span>
+              <span class="font-bold text-white" id="sub-brand-posts-count">0</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-slate-400">Tracked Competitor Posts</span>
+              <span class="font-bold text-amber-400" id="sub-comp-posts-count">0</span>
+            </div>
           </div>
         </div>
-      </section>
 
-      <!-- TAB 2: AI Chat Assistant -->
-      <section id="chat-tab" class="tab-pane">
-        <div class="chat-layout">
-          <div class="chat-main">
-            <div class="chat-messages" id="chat-messages">
-              <div class="message assistant-message">
-                <div class="message-avatar">AI</div>
-                <div class="message-content">
-                  <p>Halo tim marketing! Saya asisten riset konten media sosial EasyCorp. Tanyakan seputar topik, kata kunci, ide konten viral, atau perbandingan tren di Instagram & TikTok.</p>
+        <!-- Card 3: Col 1 (Multi-Platform Matrix) -->
+        <div class="bento-card col-span-1 rounded-2xl p-8 flex flex-col justify-between">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Channel Distribution</span>
+            <div class="mt-6 space-y-4">
+              <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span class="badge-ig text-[10px] font-bold px-2 py-0.5 rounded">INSTAGRAM</span>
+                  <div class="text-xs text-slate-400 mt-1">3 Accounts Active</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-base font-bold text-white font-display" id="matrix-ig-posts">0 posts</div>
+                  <div class="text-[11px] text-slate-500" id="matrix-ig-er">0% ER</div>
+                </div>
+              </div>
+              <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span class="badge-th text-[10px] font-bold px-2 py-0.5 rounded">THREADS</span>
+                  <div class="text-xs text-slate-400 mt-1">@id.easylegal</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-base font-bold text-white font-display" id="matrix-th-posts">0 posts</div>
+                  <div class="text-[11px] text-slate-500" id="matrix-th-likes">0 likes</div>
+                </div>
+              </div>
+              <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span class="badge-tt text-[10px] font-bold px-2 py-0.5 rounded">TIKTOK</span>
+                  <div class="text-xs text-slate-400 mt-1">@id.easylegal</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-base font-bold text-white font-display" id="matrix-tt-posts">0 videos</div>
+                  <div class="text-[11px] text-slate-500" id="matrix-tt-views">0 views</div>
                 </div>
               </div>
             </div>
-
-            <!-- Suggestion Prompts -->
-            <div class="chat-prompts">
-              <span class="prompts-label">Contoh riset:</span>
-              <button class="prompt-chip" data-query="riset topik pendirian PT seperti apa performanya di sosial media?">Riset Topik PT</button>
-              <button class="prompt-chip" data-query="konten apa yang paling viral tentang virtual office di Instagram dan TikTok?">Konten Viral Virtual Office</button>
-              <button class="prompt-chip" data-query="bandingkan topik pendirian PT vs virtual office vs konsultasi pajak">Bandingkan 3 Topik</button>
-            </div>
-
-            <!-- Chat Input Form -->
-            <form id="chat-form" class="chat-input-area">
-              <input type="text" id="chat-input" placeholder="Tanyakan seputar riset topik, konten viral, likes, views, atau ide konten marketing..." autocomplete="off" />
-              <button type="submit" id="chat-submit-btn" class="btn btn-primary">
-                Kirim
-              </button>
-            </form>
           </div>
+        </div>
 
-          <!-- Chat Inspector Panel -->
-          <div class="chat-sidebar">
-            <div class="panel-card">
-              <h3 class="card-title">Tools Riset AI Open WebUI</h3>
-              <p class="card-desc">AI dilengkapi tools otomatis untuk riset topik & konten:</p>
-              <ul class="tool-list">
-                <li><code>research_topic</code> — Riset performa kata kunci/topik</li>
-                <li><code>find_viral_content</code> — Cari referensi konten viral</li>
-                <li><code>compare_topics</code> — Bandingkan potensi antar topik</li>
-                <li><code>search_scraped_posts</code> — Filter konten & hashtag</li>
-              </ul>
-              <div class="openwebui-info-box">
-                <h4>Open WebUI</h4>
-                <p>Chat panel utama juga dapat dibuka di Open WebUI secara penuh untuk tim marketing.</p>
-              </div>
+        <!-- Card 4: Col 2-3 (Brand Performance Breakdown) -->
+        <div class="bento-card col-span-1 md:col-span-2 rounded-2xl p-8 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Unit Performance Overview</span>
+            <span class="text-xs text-slate-500">Real-Time SQLite State</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
+            <div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800/80">
+              <div class="text-sm font-bold text-white font-display">EasyLegal</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Corporate & Licenses</div>
+              <div class="text-2xl font-black text-blue-400 font-display mt-4" id="brand-stat-legal-views">0</div>
+              <div class="text-[11px] text-slate-500 mt-1">Total Verified Views</div>
+            </div>
+            <div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800/80">
+              <div class="text-sm font-bold text-white font-display">EasyTax</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Corporate Tax & SPT</div>
+              <div class="text-2xl font-black text-emerald-400 font-display mt-4" id="brand-stat-tax-views">0</div>
+              <div class="text-[11px] text-slate-500 mt-1">Total Verified Views</div>
+            </div>
+            <div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800/80">
+              <div class="text-sm font-bold text-white font-display">EasyOffice</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Virtual & Serviced Office</div>
+              <div class="text-2xl font-black text-purple-400 font-display mt-4" id="brand-stat-office-views">0</div>
+              <div class="text-[11px] text-slate-500 mt-1">Total Verified Views</div>
             </div>
           </div>
         </div>
-      </section>
 
-      <!-- TAB 3: Posts & Engagement Data -->
-      <section id="posts-tab" class="tab-pane">
-        <div class="section-header">
-          <div>
-            <h2>Database Konten Media Sosial</h2>
-            <p>Seluruh postingan hasil scraping Instagram & TikTok yang tersimpan di database.</p>
+      </div>
+    </section>
+
+    <!-- DESIRE: Interactive Analytics & Shared Social Media Topic Trends -->
+    <section class="max-w-6xl mx-auto px-6 mb-24">
+      <div class="mb-10 text-left">
+        <h2 class="font-display font-extrabold text-2xl sm:text-3xl text-white tracking-tight">
+          Trajectory & Competitor Topic Trends
+        </h2>
+        <p class="text-slate-400 text-sm mt-1">
+          Historical growth trajectory compared with public content engagement across identical business topics.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Chart 1: Time-Series Trajectory -->
+        <div class="bento-card rounded-2xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-sm font-bold text-white font-display">Engagement & View Trajectory</div>
+              <div class="text-xs text-slate-400 mt-0.5">Daily time-series velocity</div>
+            </div>
+            <span class="text-[11px] font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md border border-blue-500/20">Linear Scrub</span>
+          </div>
+          <div class="h-72 w-full relative">
+            <canvas id="timeSeriesTrajectoryCanvas"></canvas>
           </div>
         </div>
 
-        <!-- Filters -->
-        <div class="filter-bar">
-          <input type="text" id="post-search-keyword" placeholder="Cari keyword caption..." />
-          <select id="post-filter-platform">
-            <option value="">Semua Platform</option>
-            <option value="instagram">Instagram</option>
-            <option value="tiktok">TikTok</option>
-          </select>
-          <button id="post-filter-btn" class="btn btn-secondary">Filter</button>
+        <!-- Chart 2: Shared Topic Benchmark Matrix -->
+        <div class="bento-card rounded-2xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-sm font-bold text-white font-display">Shared Topic Dominance</div>
+              <div class="text-xs text-slate-400 mt-0.5">Brand vs Competitors in identical niches</div>
+            </div>
+            <span class="text-[11px] font-semibold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">Topic Radar</span>
+          </div>
+          <div class="h-72 w-full relative">
+            <canvas id="topicRadarCanvas"></canvas>
+          </div>
         </div>
 
-        <!-- Posts Table -->
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
+      </div>
+    </section>
+
+    <!-- ACTION: Content Leaderboard & Hook Extraction Table -->
+    <section class="max-w-6xl mx-auto px-6">
+      <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 class="font-display font-extrabold text-2xl text-white tracking-tight">
+            Top Content & Opening Hook Benchmark
+          </h2>
+          <p class="text-slate-400 text-sm mt-1">
+            Top-performing posts indexed by views and engagement, isolating opening hooks for tactical content planning.
+          </p>
+        </div>
+        <div class="text-xs font-semibold text-slate-400" id="leaderboard-total-count">
+          Showing verified posts
+        </div>
+      </div>
+
+      <div class="bento-card rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900/90 text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[11px]">
               <tr>
-                <th>Platform</th>
-                <th>Akun</th>
-                <th>Caption</th>
-                <th>Likes</th>
-                <th>Comments</th>
-                <th>Views</th>
-                <th>Tanggal Post</th>
+                <th class="py-4 px-5">Platform</th>
+                <th class="py-4 px-5">Profile</th>
+                <th class="py-4 px-5">Scope</th>
+                <th class="py-4 px-5 max-w-sm">Opening Hook / Caption Excerpt</th>
+                <th class="py-4 px-5 text-right">Views</th>
+                <th class="py-4 px-5 text-right">Likes</th>
+                <th class="py-4 px-5 text-right">Engagement</th>
+                <th class="py-4 px-5 text-center">Reference</th>
               </tr>
             </thead>
-            <tbody id="posts-table-body">
-              <tr><td colspan="7" class="text-center">Memuat postingan...</td></tr>
+            <tbody id="content-table-body" class="divide-y divide-slate-800/60 font-medium">
+              <tr>
+                <td colspan="8" class="py-12 text-center text-slate-500">
+                  Querying database analytics...
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <!-- TAB 4: Monitored Accounts -->
-      <section id="accounts-tab" class="tab-pane">
-        <div class="section-header">
-          <div>
-            <h2>Akun Resmi yang Dimonitor</h2>
-            <p>Daftar akun brand EasyCorp yang dimonitor profilnya secara berkala. Postingan kompetitor lainnya tersimpan otomatis di tab <strong>Data Postingan</strong> berdasarkan topik riset.</p>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <input type="text" id="account-search-input" placeholder="Cari akun..." class="form-input" style="flex: 1;" />
-            <button id="account-search-btn" class="btn btn-secondary">Cari</button>
-          </div>
-          <button id="add-account-toggle-btn" class="btn btn-primary">+ Tambah Akun</button>
-        </div>
+  </main>
 
-        <!-- Add Account Card -->
-        <div id="add-account-card" class="panel-card" style="display: none; margin-bottom: 24px;">
-          <h3 class="card-title">Daftarkan Akun Baru</h3>
-          <form id="add-account-form" class="form-grid">
-            <div class="form-group">
-              <label>Platform</label>
-              <select id="acc-platform" required>
-                <option value="instagram">Instagram</option>
-                <option value="tiktok">TikTok</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Username (tanpa @)</label>
-              <input type="text" id="acc-username" placeholder="misal: easylegal_id" required />
-            </div>
-            <div class="form-group">
-              <label>Kategori</label>
-              <select id="acc-own-brand">
-                <option value="true">Brand Sendiri (EasyCorp)</option>
-                <option value="false">Kompetitor</option>
-              </select>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">Simpan Akun</button>
-              <button type="button" id="cancel-add-account-btn" class="btn btn-secondary">Batal</button>
-            </div>
-          </form>
-        </div>
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl bg-slate-900 border border-blue-500 text-white font-semibold text-sm shadow-2xl transition-all opacity-0 pointer-events-none"></div>
 
-        <!-- Accounts Table -->
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Platform</th>
-                <th>Username</th>
-                <th>Tipe</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody id="accounts-table-body">
-              <tr><td colspan="4" class="text-center">Memuat akun...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+  <script>
+    let activeBrand = 'all';
+    let activePlatform = 'all';
+    let trajectoryChart = null;
+    let topicRadarChart = null;
 
-      <!-- TAB 5: Scrape Logs -->
-      <section id="logs-tab" class="tab-pane">
-        <div class="section-header">
-          <div>
-            <h2>Riwayat Log Scraping</h2>
-            <p>Status eksekusi scraping terjadwal dari Dokploy Scheduled Jobs.</p>
-          </div>
-          <button id="refresh-logs-btn" class="btn btn-secondary">Refresh Log</button>
-        </div>
+    document.addEventListener('DOMContentLoaded', () => {
+      initFilters();
+      refreshDashboard();
+      initGSAPMotion();
+    });
 
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Waktu Run</th>
-                <th>Platform</th>
-                <th>Status</th>
-                <th>Error Message</th>
-              </tr>
-            </thead>
-            <tbody id="logs-table-body">
-              <tr><td colspan="4" class="text-center">Memuat log...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+    function initFilters() {
+      // Navigation brand switcher
+      document.querySelectorAll('#nav-brand-group .brand-nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#nav-brand-group .brand-nav-btn').forEach(b => {
+            b.classList.remove('pill-active');
+            b.classList.add('text-slate-400');
+          });
+          btn.classList.add('pill-active');
+          btn.classList.remove('text-slate-400');
+          activeBrand = btn.dataset.brand;
+          refreshDashboard();
+        });
+      });
 
-    </main>
-  </div>
+      // Platform filter pills
+      document.querySelectorAll('#platform-filter-group .plat-nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#platform-filter-group .plat-nav-btn').forEach(b => {
+            b.classList.remove('pill-active');
+            b.classList.add('bg-slate-900', 'text-slate-400');
+          });
+          btn.classList.add('pill-active');
+          btn.classList.remove('bg-slate-900', 'text-slate-400');
+          activePlatform = btn.dataset.plat;
+          refreshDashboard();
+        });
+      });
 
-  <script src="/static/app.js"></script>
+      // Header manual trigger sync
+      const syncBtn = document.getElementById('header-sync-btn');
+      if (syncBtn) {
+        syncBtn.addEventListener('click', async () => {
+          syncBtn.disabled = true;
+          syncBtn.innerHTML = '<span>Synchronizing...</span>';
+          triggerToast('Executing parallel sync across Bright Data pool...');
+
+          try {
+            const res = await fetch('/api/cron/daily-sync?max_posts=10&background=true', { method: 'POST' });
+            const json = await res.json();
+            triggerToast('Sync queued in background. Data refreshing in 10s...');
+            setTimeout(refreshDashboard, 10000);
+          } catch (e) {
+            triggerToast('Failed to trigger sync: ' + e.message);
+          } finally {
+            setTimeout(() => {
+              syncBtn.disabled = false;
+              syncBtn.innerHTML = '<span>Trigger Sync</span>';
+            }, 5000);
+          }
+        });
+      }
+    }
+
+    async function refreshDashboard() {
+      await Promise.all([
+        loadBrandStats(),
+        loadTopicRadarChart(),
+        loadLeaderboard()
+      ]);
+    }
+
+    async function loadBrandStats() {
+      try {
+        const res = await fetch(`/api/analytics/brand-stats?brand=${encodeURIComponent(activeBrand)}&platform=${encodeURIComponent(activePlatform)}`);
+        const json = await res.json();
+        if (json.status !== 'success') return;
+        const data = json.data;
+
+        const kpis = data.kpis || {};
+        document.getElementById('kpi-total-views').textContent = Number(kpis.total_views || 0).toLocaleString();
+        document.getElementById('kpi-total-posts').textContent = Number(kpis.total_posts || 0).toLocaleString();
+        document.getElementById('kpi-avg-likes').textContent = Number(kpis.avg_likes || 0).toLocaleString();
+        document.getElementById('kpi-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
+
+        const plats = data.platforms || {};
+        const ig = plats.instagram || {};
+        const th = plats.threads || {};
+        const tt = plats.tiktok || {};
+
+        document.getElementById('matrix-ig-posts').textContent = `${ig.posts || 0} posts`;
+        document.getElementById('matrix-ig-er').textContent = `${ig.avg_er || 0}% ER`;
+        document.getElementById('matrix-th-posts').textContent = `${th.posts || 0} posts`;
+        document.getElementById('matrix-th-likes').textContent = `${Number(th.likes || 0).toLocaleString()} likes`;
+        document.getElementById('matrix-tt-posts').textContent = `${tt.posts || 0} videos`;
+        document.getElementById('matrix-tt-views').textContent = `${Number(tt.views || 0).toLocaleString()} views`;
+
+        const brands = data.brands || {};
+        document.getElementById('brand-stat-legal-views').textContent = Number(brands.easylegal?.total_views || 0).toLocaleString();
+        document.getElementById('brand-stat-tax-views').textContent = Number(brands.easytax?.total_views || 0).toLocaleString();
+        document.getElementById('brand-stat-office-views').textContent = Number(brands.easyoffice?.total_views || 0).toLocaleString();
+
+        // Render trajectory
+        renderTrajectoryChart(data.posts || []);
+
+      } catch (err) {
+        console.error('Failed to load brand statistics:', err);
+      }
+    }
+
+    function renderTrajectoryChart(posts) {
+      const datesMap = {};
+      posts.forEach(p => {
+        const d = p.posted_at ? p.posted_at.substring(0, 10) : 'Recent';
+        if (!datesMap[d]) datesMap[d] = { views: 0, likes: 0 };
+        datesMap[d].views += (p.views || 0);
+        datesMap[d].likes += (p.likes || 0);
+      });
+
+      const sortedDates = Object.keys(datesMap).sort();
+      const viewsData = sortedDates.map(d => datesMap[d].views);
+      const likesData = sortedDates.map(d => datesMap[d].likes);
+
+      if (trajectoryChart) trajectoryChart.destroy();
+      const ctx = document.getElementById('timeSeriesTrajectoryCanvas').getContext('2d');
+      trajectoryChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: sortedDates.length ? sortedDates : ['Today'],
+          datasets: [
+            {
+              label: 'Verified Views',
+              data: viewsData.length ? viewsData : [0],
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              fill: true,
+              tension: 0.35,
+              borderWidth: 2.5,
+              pointRadius: 3,
+            },
+            {
+              label: 'Engagement Likes',
+              data: likesData.length ? likesData : [0],
+              borderColor: '#10b981',
+              backgroundColor: 'transparent',
+              tension: 0.35,
+              borderWidth: 2,
+              borderDash: [4, 4],
+              pointRadius: 2,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { color: '#64748b', font: { family: 'Satoshi', size: 10 } } },
+            y: { grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { color: '#64748b', font: { family: 'Satoshi', size: 10 } } }
+          },
+          plugins: {
+            legend: { labels: { color: '#cbd5e1', font: { family: 'Satoshi', size: 11, weight: '600' } } }
+          }
+        }
+      });
+    }
+
+    async function loadTopicRadarChart() {
+      try {
+        const res = await fetch('/api/analytics/competitor-comparison?days=30');
+        const json = await res.json();
+        if (json.status !== 'success') return;
+        const dist = json.data.topics_distribution || {};
+
+        const topics = Object.keys(dist);
+        const brandViews = topics.map(t => dist[t].brand_views);
+        const compViews = topics.map(t => dist[t].competitor_views);
+
+        const brandPosts = json.data.brand_performance?.posts_count || 0;
+        const compPosts = json.data.competitor_performance?.posts_count || 0;
+        document.getElementById('kpi-share-ratio').textContent = `${brandPosts} / ${compPosts}`;
+        document.getElementById('sub-brand-posts-count').textContent = brandPosts;
+        document.getElementById('sub-comp-posts-count').textContent = compPosts;
+
+        if (topicRadarChart) topicRadarChart.destroy();
+        const ctx = document.getElementById('topicRadarCanvas').getContext('2d');
+        topicRadarChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: topics.length ? topics : ['General Legal'],
+            datasets: [
+              {
+                label: 'EasyCorp Verified Views',
+                data: brandViews.length ? brandViews : [0],
+                backgroundColor: '#2563eb',
+                borderRadius: 4,
+              },
+              {
+                label: 'Competitor Topic Views',
+                data: compViews.length ? compViews : [0],
+                backgroundColor: '#f59e0b',
+                borderRadius: 4,
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'Satoshi', size: 10 } } },
+              y: { grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { color: '#64748b', font: { family: 'Satoshi', size: 10 } } }
+            },
+            plugins: {
+              legend: { labels: { color: '#cbd5e1', font: { family: 'Satoshi', size: 11, weight: '600' } } }
+            }
+          }
+        });
+      } catch (err) {
+        console.error('Failed to load topic radar:', err);
+      }
+    }
+
+    async function loadLeaderboard() {
+      const tableBody = document.getElementById('content-table-body');
+      try {
+        const res = await fetch(`/api/analytics/leaderboard?limit=15&days=30${activePlatform !== 'all' ? `&platform=${activePlatform}` : ''}`);
+        const json = await res.json();
+
+        if (json.status !== 'success' || !json.data.length) {
+          tableBody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-500">No content records found for this criteria. Run Trigger Sync to populate data.</td></tr>';
+          return;
+        }
+
+        document.getElementById('leaderboard-total-count').textContent = `${json.data.length} records verified`;
+
+        tableBody.innerHTML = json.data.map(p => {
+          const platBadge = p.platform === 'instagram' ? 'badge-ig' : (p.platform === 'tiktok' ? 'badge-tt' : 'badge-th');
+          const isOwn = p.is_own_brand;
+          const formattedDate = p.posted_at ? p.posted_at.substring(0, 10) : '-';
+          const hookPreview = p.hook || p.caption || '-';
+          const link = p.permalink || '#';
+
+          return `
+            <tr class="hover:bg-slate-900/40 transition-colors">
+              <td class="py-3.5 px-5">
+                <span class="${platBadge} px-2 py-0.5 rounded text-[10px] font-bold uppercase">${p.platform}</span>
+              </td>
+              <td class="py-3.5 px-5 font-bold text-white">@${p.username}</td>
+              <td class="py-3.5 px-5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isOwn ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">
+                  ${isOwn ? 'EasyCorp' : 'Competitor'}
+                </span>
+              </td>
+              <td class="py-3.5 px-5 max-w-sm text-slate-300 font-normal leading-snug">
+                "${hookPreview}"
+              </td>
+              <td class="py-3.5 px-5 text-right font-display font-bold text-white">${Number(p.views || 0).toLocaleString()}</td>
+              <td class="py-3.5 px-5 text-right font-medium text-slate-400">${Number(p.likes || 0).toLocaleString()}</td>
+              <td class="py-3.5 px-5 text-right font-bold text-emerald-400">${p.engagement_rate}%</td>
+              <td class="py-3.5 px-5 text-center">
+                <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 font-semibold text-xs">
+                  Inspect ↗
+                </a>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tableBody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-rose-500">Failed to load content radar: ${err.message}</td></tr>`;
+      }
+    }
+
+    function initGSAPMotion() {
+      if (typeof gsap !== 'undefined') {
+        gsap.from('.bento-card', {
+          opacity: 0,
+          y: 20,
+          duration: 0.6,
+          stagger: 0.08,
+          ease: 'power2.out'
+        });
+      }
+    }
+
+    function triggerToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.style.opacity = '1';
+      toast.style.pointerEvents = 'auto';
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.pointerEvents = 'none';
+      }, 4000);
+    }
+  </script>
 </body>
 </html>
