@@ -376,7 +376,7 @@
               <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold">PT & Izin</span>
             </div>
             <div class="text-2xl font-bold font-mono text-gray-900 mt-2" id="unit-legal-views">0</div>
-            <div class="text-xs text-gray-500 mt-1">Total verified impressions</div>
+            <div class="text-xs text-gray-500 mt-1" id="unit-legal-label">Total verified impressions</div>
           </div>
           <div class="pt-4 mt-4 border-t border-gray-100 text-xs text-gray-500 flex justify-between">
             <span>Handles:</span>
@@ -391,7 +391,7 @@
               <span class="text-[10px] bg-rose-50 text-rose-700 px-2 py-0.5 rounded font-bold">Pajak & SPT</span>
             </div>
             <div class="text-2xl font-bold font-mono text-gray-900 mt-2" id="unit-tax-views">0</div>
-            <div class="text-xs text-gray-500 mt-1">Total verified impressions</div>
+            <div class="text-xs text-gray-500 mt-1" id="unit-tax-label">Total verified impressions</div>
           </div>
           <div class="pt-4 mt-4 border-t border-gray-100 text-xs text-gray-500 flex justify-between">
             <span>Handles:</span>
@@ -406,7 +406,7 @@
               <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-bold">Virtual Office</span>
             </div>
             <div class="text-2xl font-bold font-mono text-gray-900 mt-2" id="unit-office-views">0</div>
-            <div class="text-xs text-gray-500 mt-1">Total verified impressions</div>
+            <div class="text-xs text-gray-500 mt-1" id="unit-office-label">Total verified impressions</div>
           </div>
           <div class="pt-4 mt-4 border-t border-gray-100 text-xs text-gray-500 flex justify-between">
             <span>Handles:</span>
@@ -555,9 +555,25 @@
         document.getElementById('dist-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
 
         const brands = data.brands || {};
-        document.getElementById('unit-legal-views').textContent = Number(brands.easylegal?.total_views || 0).toLocaleString('id-ID');
-        document.getElementById('unit-tax-views').textContent = Number(brands.easytax?.total_views || 0).toLocaleString('id-ID');
-        document.getElementById('unit-office-views').textContent = Number(brands.easyoffice?.total_views || 0).toLocaleString('id-ID');
+        const renderUnitCard = (valueId, labelId, brand) => {
+          const totalViews = Number(brand?.total_views || 0);
+          const totalPosts = Number(brand?.total_posts || 0);
+          const valueEl = document.getElementById(valueId);
+          const labelEl = document.getElementById(labelId);
+          if (totalPosts === 0) {
+            valueEl.textContent = '—';
+            labelEl.textContent = 'Belum ada post tersimpan';
+          } else if (totalViews === 0) {
+            valueEl.textContent = '—';
+            labelEl.textContent = `Views belum tercatat dari ${totalPosts} post (keterbatasan data scraping)`;
+          } else {
+            valueEl.textContent = totalViews.toLocaleString('id-ID');
+            labelEl.textContent = 'Total verified impressions';
+          }
+        };
+        renderUnitCard('unit-legal-views', 'unit-legal-label', brands.easylegal);
+        renderUnitCard('unit-tax-views', 'unit-tax-label', brands.easytax);
+        renderUnitCard('unit-office-views', 'unit-office-label', brands.easyoffice);
 
         renderAreaWaveChart(data.posts || []);
       } catch (err) {
