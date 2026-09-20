@@ -355,10 +355,10 @@
               <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
               Interaksi per Topik: EasyCorp vs Kompetitor
             </h2>
-            <p class="text-xs text-gray-500">Total interaksi (like + komentar) EasyCorp dibanding kompetitor untuk 3 topik utama: Pendirian PT, Konsultasi Pajak, dan Virtual Office</p>
+            <p class="text-xs text-gray-500">Total interaksi (like + komentar) sepanjang data yang tersimpan, untuk 3 topik utama: Pendirian PT, Konsultasi Pajak, dan Virtual Office</p>
           </div>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 self-start sm:self-auto border border-amber-200">
-            Benchmark 3 Topik
+            Semua Waktu (bukan 30 hari)
           </span>
         </div>
 
@@ -664,8 +664,8 @@
         if (noteEl) {
           const totalSample = topics.reduce((sum, t) => sum + dist[t].brand_posts + dist[t].competitor_posts, 0);
           noteEl.textContent = totalSample > 0
-            ? `Berdasarkan ${totalSample} post yang membahas topik ini dalam ${currentDays} hari terakhir — sampel kecil, gunakan sebagai indikasi awal, bukan kesimpulan final.`
-            : `Belum ada post EasyCorp maupun kompetitor yang membahas ketiga topik ini dalam ${currentDays} hari terakhir.`;
+            ? `Berdasarkan ${totalSample} post sepanjang data yang tersimpan (tidak dibatasi filter tanggal di atas, karena riset topik jarang dilakukan) — sampel masih kecil, gunakan sebagai indikasi awal, bukan kesimpulan final.`
+            : `Belum ada post EasyCorp maupun kompetitor yang membahas ketiga topik ini sama sekali.`;
         }
 
         if (topicBarChart) topicBarChart.destroy();

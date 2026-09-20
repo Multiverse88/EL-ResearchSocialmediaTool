@@ -317,6 +317,14 @@ def get_competitor_comparison(
     # (same pattern as Database.get_topic_summary/query_posts), because EasyCorp's own
     # posts come from profile scraping and are never topic-tagged — caption matching is
     # what lets the brand side of this chart show real data instead of always 0.
+    #
+    # Deliberately NOT filtered by the `days` window (unlike brand_performance/
+    # competitor_performance above): niche-topic research is run occasionally, not
+    # continuously, so almost all matching posts predate a rolling 30-day window —
+    # applying it here made every topic look empty even when real historical data
+    # existed (confirmed: 0 posts in any topic at days=30 vs 4-24 posts per topic
+    # at days=3650). This widget answers "who has ever posted more about this niche",
+    # not "who posted about it this month".
     NICHE_KEYWORDS = [
         ("pendirian pt", "Pendirian PT"),
         ("pajak", "Konsultasi Pajak"),
@@ -330,11 +338,10 @@ def get_competitor_comparison(
                    COALESCE(SUM(p.likes), 0) + COALESCE(SUM(p.comments), 0)
             FROM posts p
             JOIN accounts a ON p.account_id = a.id
-            WHERE p.posted_at >= ?
-              AND (LOWER(p.topic) LIKE ? OR LOWER(p.caption) LIKE ?)
+            WHERE (LOWER(p.topic) LIKE ? OR LOWER(p.caption) LIKE ?)
             GROUP BY a.is_own_brand
         """
-        cursor = db.conn.execute(sql_topic, (cutoff_iso, like_kw, like_kw))
+        cursor = db.conn.execute(sql_topic, (like_kw, like_kw))
         entry = {
             "brand_posts": 0, "brand_views": 0, "brand_engagement": 0,
             "competitor_posts": 0, "competitor_views": 0, "competitor_engagement": 0,
