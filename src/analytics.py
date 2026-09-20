@@ -455,19 +455,23 @@ def get_brand_overview_stats(
                 COUNT(*),
                 COALESCE(SUM(p.views), 0),
                 ROUND(COALESCE(AVG(p.likes), 0), 1),
-                ROUND(CASE WHEN SUM(p.views) > 0 THEN ((SUM(p.likes) + SUM(p.comments)) * 100.0 / SUM(p.views)) ELSE (SUM(p.likes) + SUM(p.comments)) * 1.0 / MAX(COUNT(*), 1) END, 2)
+                ROUND(CASE WHEN SUM(p.views) > 0 THEN ((SUM(p.likes) + SUM(p.comments)) * 100.0 / SUM(p.views)) ELSE (SUM(p.likes) + SUM(p.comments)) * 1.0 / MAX(COUNT(*), 1) END, 2),
+                COALESCE(SUM(p.likes), 0),
+                COALESCE(SUM(p.comments), 0)
             FROM posts p
             JOIN accounts a ON p.account_id = a.id
             WHERE a.username IN ({placeholders})
         """
         cursor = db.conn.execute(sql_b, handles)
-        brow = cursor.fetchone() or (0, 0, 0.0, 0.0)
+        brow = cursor.fetchone() or (0, 0, 0.0, 0.0, 0, 0)
         brands_data[b_key] = {
             "name": b_name,
             "total_posts": brow[0],
             "total_views": brow[1],
             "avg_likes": brow[2],
             "avg_er": brow[3],
+            "total_likes": brow[4],
+            "total_comments": brow[5],
         }
 
     # 4. Posts List

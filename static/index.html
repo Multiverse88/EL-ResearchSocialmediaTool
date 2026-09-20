@@ -558,14 +558,15 @@
         const renderUnitCard = (valueId, labelId, brand) => {
           const totalViews = Number(brand?.total_views || 0);
           const totalPosts = Number(brand?.total_posts || 0);
+          const totalEngagement = Number(brand?.total_likes || 0) + Number(brand?.total_comments || 0);
           const valueEl = document.getElementById(valueId);
           const labelEl = document.getElementById(labelId);
           if (totalPosts === 0) {
             valueEl.textContent = '—';
             labelEl.textContent = 'Belum ada post tersimpan';
           } else if (totalViews === 0) {
-            valueEl.textContent = '—';
-            labelEl.textContent = `Views belum tercatat dari ${totalPosts} post (keterbatasan data scraping)`;
+            valueEl.textContent = totalEngagement.toLocaleString('id-ID');
+            labelEl.textContent = `Total interaksi (like+komentar) dari ${totalPosts} post — views belum tercatat`;
           } else {
             valueEl.textContent = totalViews.toLocaleString('id-ID');
             labelEl.textContent = 'Total verified impressions';
