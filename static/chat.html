@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id" class="dark">
+<html lang="id">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,13 +10,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: 'class',
       theme: {
         extend: {
           fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
-          colors: {
-            surface: { 950: '#0b0d12', 900: '#111318', 850: '#171a21', 800: '#1e222b', 750: '#262b36', border: '#2a2f3a' },
-          },
         },
       },
     };
@@ -24,58 +20,75 @@
   <style>
     * { box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
     html, body { height: 100%; margin: 0; }
-    body { background-color: #0b0d12; color: #e5e7eb; overflow: hidden; }
+    body { background-color: #f5f4ef; color: #1c1917; overflow: hidden; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb { background: #d6d3c9; border-radius: 9999px; }
     textarea { field-sizing: content; }
-    .conv-item.active { background-color: #1e222b; color: #ffffff; }
-    .msg-bubble-user { background-color: #dc2626; color: #ffffff; }
-    .msg-bubble-assistant { background-color: #171a21; color: #e5e7eb; border: 1px solid #262b36; }
-    .prompt-chip:hover { background-color: #1e222b; border-color: #3a4150; }
+    .conv-item.active { background-color: #ffffff; border-left-color: #dc2626; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .msg-bubble-user { background-color: #eae7dc; color: #1c1917; }
+    .prompt-card:hover { border-color: #dc2626; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    select { background-image: none; }
   </style>
 </head>
 <body class="antialiased h-screen flex">
 
   <!-- Sidebar: Conversations -->
-  <aside class="w-72 bg-surface-950 border-r border-surface-border flex flex-col shrink-0 h-full">
-    <div class="p-3 border-b border-surface-border">
-      <a href="/analytics" class="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-surface-850 transition-colors text-xs font-semibold text-gray-400 hover:text-white">
+  <aside class="w-80 bg-stone-50 border-r border-stone-200 flex flex-col shrink-0 h-full">
+    <div class="p-3 border-b border-stone-200">
+      <a href="/analytics" class="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-stone-200/60 transition-colors text-xs font-semibold text-stone-500 hover:text-stone-900">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
         <span>Kembali ke Dashboard</span>
       </a>
     </div>
 
-    <div class="p-3">
-      <button id="new-chat-btn" class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-surface-border text-sm font-semibold text-gray-200 hover:bg-surface-850 transition-colors">
+    <div class="p-3 space-y-2">
+      <button id="new-chat-btn" class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-sm font-semibold text-white shadow-sm transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
         <span>Percakapan Baru</span>
       </button>
+      <div class="relative">
+        <svg class="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"></path></svg>
+        <input id="conv-search" type="text" placeholder="Cari percakapan" class="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-xs text-stone-700 placeholder-stone-400 focus:outline-none focus:border-red-400" />
+      </div>
     </div>
 
-    <div class="px-3 pb-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Riwayat Percakapan</div>
-    <div id="conversation-list" class="flex-1 overflow-y-auto px-3 pb-3 space-y-1"></div>
+    <div id="conversation-list" class="flex-1 overflow-y-auto px-3 pb-3 space-y-3"></div>
 
-    <div class="p-3 border-t border-surface-border">
+    <div class="px-3 pb-2 pt-2 border-t border-stone-200">
+      <div class="px-1 pb-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-wider">Akun Terhubung</div>
+      <div id="connected-accounts" class="space-y-0.5 max-h-32 overflow-y-auto">
+        <div class="px-2 py-2 text-[11px] text-stone-400">Memuat akun...</div>
+      </div>
+    </div>
+
+    <div class="p-3 border-t border-stone-200">
       <div class="flex items-center gap-2.5 px-2 py-2 rounded-xl">
         <div class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center font-extrabold text-white text-xs shrink-0">EC</div>
         <div class="flex flex-col truncate">
-          <span class="text-xs font-bold text-gray-200 truncate">EasyCorp Social AI</span>
-          <span class="text-[10px] text-gray-500 truncate">Claude Tool-Use Agent</span>
+          <span class="text-xs font-bold text-stone-800 truncate">EasyCorp Social AI</span>
+          <span class="text-[10px] text-stone-400 truncate">Claude Tool-Use Agent</span>
         </div>
       </div>
     </div>
   </aside>
 
   <!-- Main Chat Area -->
-  <main class="flex-1 flex flex-col h-full bg-surface-900 min-w-0">
+  <main class="flex-1 flex flex-col h-full bg-stone-100 min-w-0">
 
     <!-- Header -->
-    <header class="h-14 border-b border-surface-border flex items-center justify-between px-5 shrink-0">
-      <div class="flex items-center gap-2 min-w-0">
-        <span id="conversation-title" class="font-bold text-sm text-gray-100 truncate">Percakapan Baru</span>
+    <header class="h-16 border-b border-stone-200 flex items-center justify-between px-6 shrink-0 bg-stone-100/80 backdrop-blur">
+      <div class="flex flex-col min-w-0">
+        <span id="conversation-title" class="font-bold text-sm text-stone-900 truncate">Percakapan Baru</span>
+        <span id="conversation-subtitle" class="text-[11px] text-stone-400 truncate">Belum disimpan</span>
       </div>
-      <div class="flex items-center gap-2 text-[11px] font-semibold text-gray-500">
-        <span class="px-2 py-1 rounded-lg bg-surface-850 border border-surface-border">social-media-claude-agent</span>
+      <div class="flex items-center gap-2 text-[11px] font-semibold text-stone-500 shrink-0">
+        <span class="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>social-media-claude-agent
+        </span>
+        <button id="export-btn" disabled class="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-500 hover:text-stone-900 hover:border-stone-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>
+          Ekspor
+        </button>
       </div>
     </header>
 
@@ -83,20 +96,32 @@
     <div id="chat-messages" class="flex-1 overflow-y-auto px-4 py-6 flex flex-col gap-6"></div>
 
     <!-- Composer -->
-    <div class="border-t border-surface-border p-4 shrink-0">
+    <div class="border-t border-stone-200 p-4 shrink-0 bg-stone-100">
       <form id="chat-form" class="max-w-3xl mx-auto w-full">
-        <div class="relative bg-surface-850 rounded-2xl border border-surface-border focus-within:border-red-500 transition-colors shadow-lg">
+        <div class="relative bg-white rounded-2xl border border-stone-200 focus-within:border-red-400 transition-colors shadow-sm">
           <textarea
             id="chat-input"
             rows="1"
             placeholder="Tanyakan sesuatu tentang performa media sosial EasyCorp..."
-            class="w-full bg-transparent text-gray-100 placeholder-gray-500 text-sm px-4 py-3.5 pr-14 focus:outline-none resize-none max-h-40"
+            class="w-full bg-transparent text-stone-800 placeholder-stone-400 text-sm px-4 pt-3.5 pb-11 focus:outline-none resize-none max-h-40"
           ></textarea>
           <button type="submit" id="send-btn" class="absolute right-2.5 bottom-2.5 w-9 h-9 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center justify-center transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
           </button>
+          <div class="absolute left-3 bottom-2.5 flex items-center gap-2">
+            <select id="account-scope" class="text-[11px] font-medium text-stone-500 bg-stone-100 border border-stone-200 rounded-md px-2 py-1 focus:outline-none">
+              <option value="">Semua akun</option>
+            </select>
+            <select id="chat-mode" class="text-[11px] font-medium text-stone-500 bg-stone-100 border border-stone-200 rounded-md px-2 py-1 focus:outline-none">
+              <option value="analisis">Mode: Analisis</option>
+              <option value="ide-konten">Mode: Ide Konten</option>
+              <option value="riset-tren">Mode: Riset Tren</option>
+              <option value="aksi-data">Mode: Aksi Data</option>
+            </select>
+          </div>
+          <span class="absolute right-14 bottom-4 text-[10px] text-stone-400">Enter untuk kirim</span>
         </div>
-        <p class="text-center text-[11px] text-gray-600 mt-2">AI dapat membuat kesalahan. Verifikasi angka penting lewat dashboard analitik.</p>
+        <p class="text-center text-[11px] text-stone-400 mt-2">AI dapat membuat kesalahan. Verifikasi angka penting lewat dashboard analitik.</p>
       </form>
     </div>
   </main>
@@ -104,9 +129,12 @@
   <script>
     const CHAT_ACTION_API_KEY = "__CHAT_ACTION_API_KEY__";
     const STORAGE_KEY = "easycorp_chat_conversations";
+    const PLATFORM_ABBR = { instagram: 'IG', tiktok: 'TT', threads: 'TH' };
+    const MODE_LABELS = { analisis: 'Analisis', 'ide-konten': 'Ide Konten', 'riset-tren': 'Riset Tren', 'aksi-data': 'Aksi Data' };
 
     let conversations = loadConversations();
     let activeConversationId = null;
+    let searchQuery = '';
 
     function loadConversations() {
       try {
@@ -122,7 +150,8 @@
     }
 
     function createConversation() {
-      const conv = { id: `conv_${Date.now()}`, title: "Percakapan Baru", messages: [], createdAt: Date.now() };
+      const now = Date.now();
+      const conv = { id: `conv_${now}`, title: "Percakapan Baru", messages: [], createdAt: now, updatedAt: now };
       conversations.unshift(conv);
       saveConversations();
       return conv;
@@ -132,20 +161,61 @@
       return conversations.find((c) => c.id === activeConversationId) || null;
     }
 
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatTimeWIB(ts) {
+      return new Date(ts).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).replace(':', '.');
+    }
+
+    function groupLabel(ts) {
+      const d = new Date(ts);
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const diffDays = Math.round((startOfToday - startOfDay) / 86400000);
+      if (diffDays <= 0) return 'HARI INI';
+      if (diffDays <= 7) return '7 HARI TERAKHIR';
+      return 'LEBIH LAMA';
+    }
+
     function renderConversationList() {
       const list = document.getElementById('conversation-list');
-      if (conversations.length === 0) {
-        list.innerHTML = '<div class="px-2 py-4 text-xs text-gray-600 text-center">Belum ada riwayat percakapan.</div>';
+      const filtered = conversations
+        .filter((c) => !searchQuery || c.title.toLowerCase().includes(searchQuery))
+        .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+
+      if (filtered.length === 0) {
+        list.innerHTML = `<div class="px-2 py-6 text-xs text-stone-400 text-center">${searchQuery ? 'Tidak ada percakapan cocok.' : 'Belum ada percakapan.<br/>Riwayat percakapanmu tersimpan di sini selama 90 hari.'}</div>`;
         return;
       }
-      list.innerHTML = conversations
-        .map((c) => `
-          <button class="conv-item w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-gray-400 hover:bg-surface-850 hover:text-white transition-colors truncate flex items-center gap-2 ${c.id === activeConversationId ? 'active' : ''}" data-conv-id="${c.id}">
-            <svg class="w-3.5 h-3.5 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-            <span class="truncate">${escapeHtml(c.title)}</span>
-          </button>
-        `)
-        .join('');
+
+      const groups = {};
+      for (const c of filtered) {
+        const label = groupLabel(c.updatedAt || c.createdAt);
+        if (!groups[label]) groups[label] = [];
+        groups[label].push(c);
+      }
+
+      const order = ['HARI INI', '7 HARI TERAKHIR', 'LEBIH LAMA'];
+      list.innerHTML = order
+        .filter((label) => groups[label] && groups[label].length > 0)
+        .map((label) => `
+          <div>
+            <div class="px-2 pb-1.5 text-[10px] font-bold text-stone-400 uppercase tracking-wider">${label}</div>
+            <div class="space-y-1">
+              ${groups[label].map((c) => `
+                <button class="conv-item w-full text-left px-3 py-2.5 rounded-xl border-l-4 border-transparent hover:bg-white transition-colors truncate flex flex-col gap-0.5 ${c.id === activeConversationId ? 'active' : ''}" data-conv-id="${c.id}">
+                  <span class="truncate text-xs font-semibold text-stone-800">${escapeHtml(c.title)}</span>
+                  <span class="truncate text-[10px] text-stone-400">${formatTimeWIB(c.updatedAt || c.createdAt)} · ${c.messages.length} pesan</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
 
       list.querySelectorAll('.conv-item').forEach((btn) => {
         btn.addEventListener('click', () => switchConversation(btn.dataset.convId));
@@ -158,97 +228,184 @@
       renderMessages();
     }
 
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
-
     function getEmptyStateHtml() {
       return `
-        <div id="empty-state" class="max-w-2xl mx-auto w-full flex flex-col items-center text-center gap-4 mt-12">
+        <div id="empty-state" class="max-w-2xl mx-auto w-full flex flex-col items-center text-center gap-4 mt-8">
           <div class="w-14 h-14 rounded-2xl bg-red-600 flex items-center justify-center font-extrabold text-white text-xl shadow-lg">EC</div>
           <div>
-            <h1 class="text-xl font-bold text-white">Tanya AI EasyCorp</h1>
-            <p class="text-sm text-gray-400 mt-1.5 max-w-md">Analisis performa @id.easylegal, @id.easytax, @id.easyoffice, benchmark kompetitor, atau minta aksi seperti "scrape akun X" langsung dari sini.</p>
+            <h1 class="text-xl font-bold text-stone-900">Tanya AI EasyCorp</h1>
+            <p class="text-sm text-stone-500 mt-1.5 max-w-md">Analisis performa @id.easylegal, @id.easytax dan @id.easyoffice, bandingkan dengan kompetitor, atau minta aksi seperti <strong class="text-stone-700">scrape ulang akun</strong> langsung dari sini.</p>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full mt-4">
-            <button class="prompt-chip text-left px-4 py-3 rounded-xl border border-surface-border bg-surface-850 text-xs text-gray-300 transition-colors" data-prompt="Bandingkan performa akun @id.easylegal vs kompetitor bulan ini">
-              Bandingkan performa @id.easylegal vs kompetitor bulan ini
-            </button>
-            <button class="prompt-chip text-left px-4 py-3 rounded-xl border border-surface-border bg-surface-850 text-xs text-gray-300 transition-colors" data-prompt="Berikan ide konten untuk EasyTax minggu ini berdasarkan tren pajak terbaru">
-              Ide konten EasyTax berdasarkan tren pajak terbaru
-            </button>
-            <button class="prompt-chip text-left px-4 py-3 rounded-xl border border-surface-border bg-surface-850 text-xs text-gray-300 transition-colors" data-prompt="Konten apa yang paling viral di TikTok untuk topik pendirian PT?">
-              Konten paling viral untuk topik pendirian PT di TikTok
-            </button>
-            <button class="prompt-chip text-left px-4 py-3 rounded-xl border border-surface-border bg-surface-850 text-xs text-gray-300 transition-colors" data-prompt="Scrape ulang data terbaru akun @id.easyoffice">
-              Scrape ulang data terbaru akun @id.easyoffice
-            </button>
+            ${renderPromptCard('ANALISIS', 'text-rose-600 bg-rose-50', 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', 'Bandingkan performa @id.easylegal vs kompetitor bulan ini')}
+            ${renderPromptCard('IDE KONTEN', 'text-amber-600 bg-amber-50', 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', 'Ide konten EasyTax berdasarkan tren pajak terbaru')}
+            ${renderPromptCard('RISET TREN', 'text-emerald-600 bg-emerald-50', 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6', 'Konten paling viral untuk topik pendirian PT di TikTok')}
+            ${renderPromptCard('AKSI DATA', 'text-red-600 bg-red-50', 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15', 'Scrape ulang data terbaru akun @id.easyoffice')}
           </div>
         </div>
       `;
     }
 
+    function renderPromptCard(label, iconClasses, iconPath, prompt) {
+      return `
+        <button class="prompt-card text-left px-4 py-3 rounded-xl border border-stone-200 bg-white transition-all" data-prompt="${escapeHtml(prompt)}">
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${iconClasses}">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${iconPath}"></path></svg>
+            </span>
+            <span class="text-[10px] font-bold text-stone-400 uppercase tracking-wider">${label}</span>
+          </div>
+          <p class="text-xs font-semibold text-stone-700 leading-snug">${escapeHtml(prompt)}</p>
+        </button>
+      `;
+    }
+
     function attachPromptChipListeners() {
-      document.querySelectorAll('.prompt-chip').forEach((chip) => {
+      document.querySelectorAll('.prompt-card').forEach((chip) => {
         chip.addEventListener('click', () => {
           sendMessage(chip.dataset.prompt);
         });
       });
     }
 
+    function renderMarkdownLite(text) {
+      const escaped = escapeHtml(text);
+      const withBold = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      const lines = withBold.split('\n');
+      let html = '';
+      let inList = false;
+      for (const line of lines) {
+        const bulletMatch = line.match(/^\s*[-•]\s+(.*)/);
+        if (bulletMatch) {
+          if (!inList) { html += '<ul class="list-disc pl-4 space-y-0.5 my-1.5">'; inList = true; }
+          html += `<li>${bulletMatch[1]}</li>`;
+        } else {
+          if (inList) { html += '</ul>'; inList = false; }
+          html += line.trim() === '' ? '<div class="h-2"></div>' : `<p class="leading-relaxed">${line}</p>`;
+        }
+      }
+      if (inList) html += '</ul>';
+      return html;
+    }
+
+    function renderReceiptsTrace(receipts) {
+      if (!receipts || receipts.length === 0) return '';
+      const allOk = receipts.every((r) => r.success);
+      const items = receipts.map((r) => {
+        const icon = r.success
+          ? '<svg class="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>'
+          : '<svg class="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>';
+        return `<div class="flex items-start gap-2 py-1.5 border-t border-stone-200 first:border-t-0 text-xs">
+          ${icon}
+          <span class="text-stone-600 flex-1">${escapeHtml(r.detail || r.action_type)}</span>
+        </div>`;
+      }).join('');
+      return `
+        <div class="rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 mb-3">
+          <div class="flex items-center justify-between text-xs font-semibold text-stone-700 mb-1">
+            <span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3L5 12h4l-1 5 6-9h-4l1-5z"/></svg>
+              ${receipts.length} alat dijalankan
+            </span>
+            <span class="${allOk ? 'text-emerald-600' : 'text-red-600'}">${allOk ? 'Selesai' : 'Sebagian gagal'}</span>
+          </div>
+          ${items}
+        </div>
+      `;
+    }
+
     function renderMessages() {
       const container = document.getElementById('chat-messages');
       const conv = getActiveConversation();
       const titleEl = document.getElementById('conversation-title');
+      const subtitleEl = document.getElementById('conversation-subtitle');
+      const exportBtn = document.getElementById('export-btn');
 
       if (!conv || conv.messages.length === 0) {
         container.innerHTML = getEmptyStateHtml();
         attachPromptChipListeners();
         titleEl.textContent = 'Percakapan Baru';
+        subtitleEl.textContent = 'Belum disimpan';
+        exportBtn.disabled = true;
         return;
       }
 
       titleEl.textContent = conv.title;
-      container.innerHTML = conv.messages
-        .map((m) => renderMessageBubble(m.role, m.content))
-        .join('');
+      subtitleEl.textContent = `Diperbarui ${formatTimeWIB(conv.updatedAt || conv.createdAt)} WIB`;
+      exportBtn.disabled = false;
+      container.innerHTML = conv.messages.map((m) => renderMessageBubble(m.role, m)).join('');
       container.scrollTop = container.scrollHeight;
     }
 
-    function renderMessageBubble(role, text) {
-      const safeText = escapeHtml(text).replace(/\n/g, '<br/>');
+    function renderMessageBubble(role, msg) {
       if (role === 'user') {
+        const safeText = escapeHtml(msg.content).replace(/\n/g, '<br/>');
         return `
           <div class="flex max-w-3xl mx-auto w-full gap-3 justify-end">
             <div class="msg-bubble-user px-4 py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-sm max-w-[75%]">${safeText}</div>
           </div>
         `;
       }
+      const meta = [msg.ts ? formatTimeWIB(msg.ts) : null, msg.elapsedSec ? `${msg.elapsedSec} detik` : null].filter(Boolean).join(' · ');
       return `
         <div class="flex max-w-3xl mx-auto w-full gap-3 items-start">
           <div class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center font-extrabold text-white text-xs shrink-0 mt-0.5">EC</div>
-          <div class="msg-bubble-assistant px-4 py-3 rounded-2xl rounded-tl-sm text-sm leading-relaxed shadow-sm max-w-[75%] whitespace-pre-wrap">${safeText}</div>
+          <div class="flex-1 min-w-0 max-w-[85%]">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold text-stone-700">AI EasyCorp</span>
+              ${meta ? `<span class="text-[10px] text-stone-400">${meta}</span>` : ''}
+            </div>
+            <div class="bg-white border border-stone-200 rounded-2xl rounded-tl-sm shadow-sm px-4 py-3.5 text-sm text-stone-800">
+              ${renderReceiptsTrace(msg.receipts)}
+              <div class="msg-body">${msg.loading ? escapeHtml(msg.content) : renderMarkdownLite(msg.content)}</div>
+            </div>
+            ${!msg.loading ? `
+              <button class="copy-btn mt-1.5 ml-1 text-[10px] text-stone-400 hover:text-stone-700 flex items-center gap-1 transition-colors" data-copy-text="${escapeHtml(msg.content)}">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                Salin
+              </button>
+            ` : ''}
+          </div>
         </div>
       `;
     }
 
-    function appendLiveBubble(role, text) {
+    function attachCopyListeners() {
+      document.querySelectorAll('.copy-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(btn.dataset.copyText);
+            const original = btn.innerHTML;
+            btn.innerHTML = 'Tersalin!';
+            setTimeout(() => { btn.innerHTML = original; }, 1500);
+          } catch (e) { /* clipboard unavailable, ignore */ }
+        });
+      });
+    }
+
+    function appendLiveBubble(role, msg) {
       const container = document.getElementById('chat-messages');
       const emptyState = document.getElementById('empty-state');
       if (emptyState) {
         container.innerHTML = '';
       }
       const wrapper = document.createElement('div');
-      wrapper.innerHTML = renderMessageBubble(role, text).trim();
+      wrapper.innerHTML = renderMessageBubble(role, msg).trim();
       const node = wrapper.firstChild;
       container.appendChild(node);
       container.scrollTop = container.scrollHeight;
-      return node.querySelector('.msg-bubble-user, .msg-bubble-assistant');
+      return node;
     }
 
-    async function sendMessage(text) {
+    async function sendMessage(rawText) {
+      const mode = document.getElementById('chat-mode').value;
+      const scope = document.getElementById('account-scope').value;
+      let text = rawText;
+      const prefixParts = [];
+      if (scope) prefixParts.push(`Untuk akun @${scope} saja`);
+      if (mode && mode !== 'analisis') prefixParts.push(`Mode: ${MODE_LABELS[mode]}`);
+      if (prefixParts.length > 0) text = `(${prefixParts.join(', ')}) ${rawText}`;
+
       let conv = getActiveConversation();
       if (!conv) {
         conv = createConversation();
@@ -256,19 +413,26 @@
         renderConversationList();
       }
 
-      conv.messages.push({ role: 'user', content: text });
+      const userMsg = { role: 'user', content: rawText, ts: Date.now() };
+      conv.messages.push(userMsg);
       if (conv.title === 'Percakapan Baru') {
-        conv.title = text.length > 42 ? text.slice(0, 42) + '...' : text;
+        conv.title = rawText.length > 42 ? rawText.slice(0, 42) + '...' : rawText;
       }
+      conv.updatedAt = Date.now();
       saveConversations();
       renderConversationList();
 
-      appendLiveBubble('user', text);
+      appendLiveBubble('user', userMsg);
       document.getElementById('conversation-title').textContent = conv.title;
-      const loadingBubble = appendLiveBubble('assistant', 'Sedang menganalisis...');
+      document.getElementById('conversation-subtitle').textContent = `Diperbarui ${formatTimeWIB(conv.updatedAt)} WIB`;
+      document.getElementById('export-btn').disabled = false;
+
+      const loadingMsg = { role: 'assistant', content: 'Sedang menganalisis...', loading: true };
+      const loadingNode = appendLiveBubble('assistant', loadingMsg);
 
       const sendBtn = document.getElementById('send-btn');
       sendBtn.disabled = true;
+      const startTime = performance.now();
 
       try {
         const headers = { 'Content-Type': 'application/json' };
@@ -278,17 +442,75 @@
         const res = await fetch('/chat', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ message: text, messages: conv.messages }),
+          body: JSON.stringify({ message: text, messages: conv.messages.map((m) => ({ role: m.role, content: m.content })) }),
         });
         const data = await res.json();
         const reply = data.reply || data.message || 'Maaf, tidak ada jawaban yang bisa ditampilkan.';
-        loadingBubble.innerHTML = escapeHtml(reply).replace(/\n/g, '<br/>');
-        conv.messages.push({ role: 'assistant', content: reply });
+        const elapsedSec = Math.round((performance.now() - startTime) / 1000);
+        const assistantMsg = { role: 'assistant', content: reply, ts: Date.now(), elapsedSec, receipts: data.action_receipts || [] };
+        conv.messages.push(assistantMsg);
+        conv.updatedAt = Date.now();
         saveConversations();
+        loadingNode.outerHTML = renderMessageBubble('assistant', assistantMsg);
+        attachCopyListeners();
+        document.getElementById('conversation-subtitle').textContent = `Diperbarui ${formatTimeWIB(conv.updatedAt)} WIB`;
       } catch (err) {
-        loadingBubble.textContent = 'Gagal menghubungi AI: ' + err.message;
+        const failMsg = { role: 'assistant', content: 'Gagal menghubungi AI: ' + err.message };
+        loadingNode.outerHTML = renderMessageBubble('assistant', failMsg);
       } finally {
         sendBtn.disabled = false;
+      }
+    }
+
+    function exportConversation() {
+      const conv = getActiveConversation();
+      if (!conv) return;
+      const lines = [`# ${conv.title}`, ''];
+      for (const m of conv.messages) {
+        lines.push(m.role === 'user' ? '**Anda:**' : '**AI EasyCorp:**');
+        lines.push(m.content, '');
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${conv.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function loadConnectedAccounts() {
+      const container = document.getElementById('connected-accounts');
+      try {
+        const res = await fetch('/accounts?monitored_only=true');
+        const data = await res.json();
+        const accounts = data.data || [];
+        if (accounts.length === 0) {
+          container.innerHTML = '<div class="px-2 py-2 text-[11px] text-stone-400">Belum ada akun dipantau.</div>';
+          return;
+        }
+        const grouped = {};
+        for (const acc of accounts) {
+          if (!grouped[acc.username]) grouped[acc.username] = [];
+          grouped[acc.username].push(acc);
+        }
+        container.innerHTML = Object.entries(grouped).map(([username, accs]) => {
+          const platforms = accs.map((a) => PLATFORM_ABBR[a.platform] || a.platform.slice(0, 2).toUpperCase()).join(' · ');
+          const active = accs.some((a) => a.monitoring_enabled);
+          return `
+            <div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+              <span class="w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-stone-300'} shrink-0"></span>
+              <span class="font-medium text-stone-700 truncate">@${escapeHtml(username)}</span>
+              <span class="text-stone-400 text-[10px] ml-auto shrink-0">${platforms}</span>
+            </div>
+          `;
+        }).join('');
+
+        const scopeSelect = document.getElementById('account-scope');
+        const usernames = Object.keys(grouped);
+        scopeSelect.innerHTML = '<option value="">Semua akun</option>' + usernames.map((u) => `<option value="${escapeHtml(u)}">@${escapeHtml(u)}</option>`).join('');
+      } catch (e) {
+        container.innerHTML = '<div class="px-2 py-2 text-[11px] text-stone-400">Gagal memuat akun.</div>';
       }
     }
 
@@ -299,6 +521,13 @@
         renderMessages();
         document.getElementById('chat-input').focus();
       });
+
+      document.getElementById('conv-search').addEventListener('input', (e) => {
+        searchQuery = e.target.value.trim().toLowerCase();
+        renderConversationList();
+      });
+
+      document.getElementById('export-btn').addEventListener('click', exportConversation);
 
       document.getElementById('chat-form').addEventListener('submit', (e) => {
         e.preventDefault();
@@ -327,6 +556,7 @@
       renderConversationList();
       renderMessages();
       initListeners();
+      loadConnectedAccounts();
     });
   </script>
 </body>
