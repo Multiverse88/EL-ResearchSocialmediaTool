@@ -54,8 +54,7 @@ def _fetch_threads_follower_count(username: str) -> Optional[int]:
     try:
         items = run_dataset(
             THREADS_PROFILES_DATASET_ID,
-            [{"profile_url": f"https://www.threads.com/@{username}"}],
-            query={"type": "discover_new", "discover_by": "profile"},
+            [{"url": f"https://www.threads.com/@{username}"}],
         )
         for item in items:
             if item.get("error"):
@@ -82,6 +81,11 @@ def _scrape_threads_profile_bright_data(
             THREADS_POSTS_DATASET_ID,
             [{"profile_url": f"https://www.threads.com/@{username}"}],
             query={"type": "discover_new", "discover_by": "profile"},
+            # Threads' "profile" discovery collector is verified (live, 2026-09-20) to
+            # routinely take 200s+ per token to complete — much slower than Instagram/
+            # TikTok's "url"-based discovery. The default 180s budget cuts it off right
+            # before completion; 300s gives it a realistic chance without hanging forever.
+            timeout=300.0,
         )
         raw_posts: List[Dict[str, Any]] = [
             post for post in (_bright_data_item_to_raw_post(item, username) for item in items)

@@ -61,7 +61,9 @@ class TestThreadsProfileScraper(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].args[0], "gd_md75myxy14rihbjksa")
         self.assertEqual(run.call_args_list[0].kwargs.get("query"), {"type": "discover_new", "discover_by": "profile"})
         self.assertEqual(run.call_args_list[0].args[1], [{"profile_url": "https://www.threads.com/@legalthreads"}])
+        self.assertEqual(run.call_args_list[0].kwargs.get("timeout"), 300.0)
         self.assertEqual(run.call_args_list[1].args[0], "gd_mde7jg3ld2h3hnnf2")
+        self.assertEqual(run.call_args_list[1].args[1], [{"url": "https://www.threads.com/@legalthreads"}])
 
         posts = self.db.query_posts(account_id=account.id)
         self.assertEqual(len(posts), 1)
