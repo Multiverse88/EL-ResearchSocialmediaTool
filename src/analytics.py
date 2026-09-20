@@ -311,30 +311,38 @@ def get_competitor_comparison(
         else:
             comp_metrics = data
 
-    # Topic breakdown
-    sql_topics = """
-        SELECT
-            COALESCE(NULLIF(p.topic, ''), 'Umum') as top_name,
-            a.is_own_brand,
-            COUNT(*),
-            COALESCE(SUM(p.views), 0)
-        FROM posts p
-        JOIN accounts a ON p.account_id = a.id
-        WHERE p.posted_at >= ?
-        GROUP BY top_name, a.is_own_brand
-        ORDER BY top_name ASC
-    """
-    cursor = db.conn.execute(sql_topics, (cutoff_iso,))
-    topic_map = {}
-    for top_name, is_own, count, views in cursor.fetchall():
-        if top_name not in topic_map:
-            topic_map[top_name] = {"brand_posts": 0, "brand_views": 0, "competitor_posts": 0, "competitor_views": 0}
-        if is_own == 1:
-            topic_map[top_name]["brand_posts"] += count
-            topic_map[top_name]["brand_views"] += views
-        else:
-            topic_map[top_name]["competitor_posts"] += count
-            topic_map[top_name]["competitor_views"] += views
+    # Topic breakdown — restricted to a curated set of niche keywords (not every raw
+    # value ever stored in posts.topic, which also picks up one-off test/exploration
+    # queries like "coba"). Matches BOTH the explicit topic tag AND caption content
+    # (same pattern as Database.get_topic_summary/query_posts), because EasyCorp's own
+    # posts come from profile scraping and are never topic-tagged — caption matching is
+    # what lets the brand side of this chart show real data instead of always 0.
+    NICHE_KEYWORDS = [
+        ("pendirian pt", "Pendirian PT"),
+        ("pajak", "Konsultasi Pajak"),
+        ("virtual office", "Virtual Office"),
+    ]
+    topic_map: Dict[str, Dict[str, Any]] = {}
+    for keyword, label in NICHE_KEYWORDS:
+        like_kw = f"%{keyword}%"
+        sql_topic = """
+            SELECT a.is_own_brand, COUNT(*), COALESCE(SUM(p.views), 0)
+            FROM posts p
+            JOIN accounts a ON p.account_id = a.id
+            WHERE p.posted_at >= ?
+              AND (LOWER(p.topic) LIKE ? OR LOWER(p.caption) LIKE ?)
+            GROUP BY a.is_own_brand
+        """
+        cursor = db.conn.execute(sql_topic, (cutoff_iso, like_kw, like_kw))
+        entry = {"brand_posts": 0, "brand_views": 0, "competitor_posts": 0, "competitor_views": 0}
+        for is_own, count, views in cursor.fetchall():
+            if is_own == 1:
+                entry["brand_posts"] = count
+                entry["brand_views"] = views
+            else:
+                entry["competitor_posts"] = count
+                entry["competitor_views"] = views
+        topic_map[label] = entry
 
     # Top viral hooks for brand vs competitor
     brand_hooks = [

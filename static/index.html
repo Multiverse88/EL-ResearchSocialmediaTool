@@ -353,18 +353,19 @@
           <div>
             <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
               <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
-              Dominasi Topik Pasar: Brand EasyCorp vs Kompetitor Luar
+              Views per Topik: EasyCorp vs Kompetitor
             </h2>
-            <p class="text-xs text-gray-500">Perbandingan volume tayangan pada ceruk topik identik: Pendirian PT, Konsultasi Pajak, dan Virtual Office</p>
+            <p class="text-xs text-gray-500">Total tayangan (views) EasyCorp dibanding kompetitor untuk 3 topik utama: Pendirian PT, Konsultasi Pajak, dan Virtual Office</p>
           </div>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 self-start sm:self-auto border border-amber-200">
-            Niche Benchmark
+            Benchmark 3 Topik
           </span>
         </div>
 
         <div class="h-80 w-full relative">
           <canvas id="topicBarChartCanvas"></canvas>
         </div>
+        <p id="topic-chart-note" class="text-xs text-gray-400"></p>
       </div>
 
       <!-- Section: Unit Performance Comparison (EasyLegal vs EasyTax vs EasyOffice) -->
@@ -650,27 +651,37 @@
         const topics = Object.keys(dist);
         const brandViews = topics.map(t => dist[t].brand_views);
         const compViews = topics.map(t => dist[t].competitor_views);
+        const brandPosts = topics.map(t => dist[t].brand_posts);
+        const compPosts = topics.map(t => dist[t].competitor_posts);
 
         const compCount = json.data.competitor_performance?.posts_count || 0;
         const subCompPosts = document.getElementById('stat-sub-comp-posts');
         if (subCompPosts) subCompPosts.textContent = compCount;
+
+        const noteEl = document.getElementById('topic-chart-note');
+        if (noteEl) {
+          const totalSample = topics.reduce((sum, t) => sum + dist[t].brand_posts + dist[t].competitor_posts, 0);
+          noteEl.textContent = totalSample > 0
+            ? `Berdasarkan ${totalSample} post yang membahas topik ini dalam ${currentDays} hari terakhir — sampel kecil, gunakan sebagai indikasi awal, bukan kesimpulan final.`
+            : `Belum ada post EasyCorp maupun kompetitor yang membahas ketiga topik ini dalam ${currentDays} hari terakhir.`;
+        }
 
         if (topicBarChart) topicBarChart.destroy();
         const ctx = document.getElementById('topicBarChartCanvas').getContext('2d');
         topicBarChart = new Chart(ctx, {
           type: 'bar',
           data: {
-            labels: topics.length ? topics.map(t => t.toUpperCase()) : ['LEGALITAS PT'],
+            labels: topics.length ? topics : ['Pendirian PT', 'Konsultasi Pajak', 'Virtual Office'],
             datasets: [
               {
-                label: 'EasyCorp Brand Views',
-                data: brandViews.length ? brandViews : [0],
+                label: 'Views EasyCorp',
+                data: brandViews.length ? brandViews : [0, 0, 0],
                 backgroundColor: '#dc2626',
                 borderRadius: 6,
               },
               {
-                label: 'Kompetitor Ceruk Serupa Views',
-                data: compViews.length ? compViews : [0],
+                label: 'Views Kompetitor',
+                data: compViews.length ? compViews : [0, 0, 0],
                 backgroundColor: '#f59e0b',
                 borderRadius: 6,
               }
@@ -686,6 +697,14 @@
             plugins: {
               legend: {
                 labels: { color: '#334155', font: { size: 11, weight: '600' } }
+              },
+              tooltip: {
+                callbacks: {
+                  afterLabel: (item) => {
+                    const posts = item.datasetIndex === 0 ? brandPosts[item.dataIndex] : compPosts[item.dataIndex];
+                    return `${posts || 0} post`;
+                  }
+                }
               }
             }
           }
