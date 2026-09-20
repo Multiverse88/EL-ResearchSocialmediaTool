@@ -109,9 +109,9 @@ Sesuai PRD Section 10, scraping harian dijalankan via fitur **Scheduled Jobs** d
 
 1. Buka URL dashboard di browser: `https://sosmed.domainanda.com` (atau `http://<ip-vps>:8000`).
 2. Statistik dan grafik untuk EasyLegal, EasyTax, dan EasyOffice langsung tampil di halaman utama.
-3. Klik tombol **Tanya AI** di pojok kanan atas untuk membuka panel chat, lalu tanyakan dalam bahasa natural:
+3. Klik tombol **Tanya AI** di pojok kanan atas untuk membuka halaman chat khusus (`/chat`), lalu tanyakan dalam bahasa natural:
    - *"Berapa rata-rata likes dan engagement rate akun EasyLegal bulan ini?"*
    - *"Bandingkan performa akun easylegal_id vs kompetitor legalku_official"*
    - *"Cari postingan yang membahas tentang izin PT dan OSS"*
    - *"Konten seperti apa yang memiliki likes tertinggi di TikTok EasyLegal?"*
-4. Panel chat memanggil backend tool secara otomatis dan menyajikan jawaban analisis lengkap beserta angka faktual, tanpa perlu membuka aplikasi atau domain lain.
+4. Halaman chat memanggil backend tool secara otomatis dan menyajikan jawaban analisis lengkap beserta angka faktual. Klik **Kembali ke Dashboard** di sidebar untuk kembali melihat grafik — tetap satu domain, tidak perlu berpindah aplikasi lain.

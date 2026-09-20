@@ -1,6 +1,6 @@
 # EasyCorp Social Media Intelligence & Analytics Dashboard
 
-Sistem terpadu untuk scraping data publik Instagram, TikTok & Threads secara terjadwal, menyimpannya di database, dan mengekspos data tersebut lewat dashboard analitik internal dengan panel chat AI **terintegrasi langsung di halaman yang sama** ("Tanya AI", didukung Claude API Tool Use).
+Sistem terpadu untuk scraping data publik Instagram, TikTok & Threads secara terjadwal, menyimpannya di database, dan mengekspos data tersebut lewat dashboard analitik internal (`/analytics`) beserta halaman chat AI khusus (`/chat`, "Tanya AI", didukung Claude API Tool Use) — satu aplikasi, satu domain.
 
 Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa engagement rata-rata akun EasyLegal bulan ini?"* atau *"Bandingkan performa akun EasyLegal vs kompetitor"*) tanpa perlu membuka spreadsheet, query database manual, atau berpindah ke aplikasi lain.
 
@@ -13,8 +13,8 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
   2. **Fallback self-hosted** (Instagram & TikTok saja — Threads tidak punya fallback gratis): Instagram via Instaloader (perlu login akun burner untuk mengurangi rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright).
   3. **Fallback terakhir**: TikTok raw HTML parsing kalau Playwright/Chromium tidak tersedia.
   - **Scheduler**: Runner siap dipanggil oleh Dokploy Scheduled Jobs (`0 2 * * *`).
-- **Panel "Tanya AI" Terintegrasi Langsung di Dashboard**:
-  - Muncul sebagai drawer di halaman dashboard yang sama tempat grafik & statistik ditampilkan — bukan aplikasi terpisah, jadi tidak ada bolak-balik antar domain.
+- **Halaman "Tanya AI" Khusus (`/chat`)**:
+  - Halaman chat mandiri bergaya ChatGPT (sidebar riwayat percakapan, bubble pesan, komposer) yang tetap satu aplikasi/domain dengan dashboard — tinggal klik "Kembali ke Dashboard" untuk balik ke grafik.
   - Didukung oleh model Claude API (`claude-3-5-sonnet`) dengan integrasi native **Tool Use**.
   - Endpoint `/v1/models` dan `/v1/chat/completions` tetap tersedia sebagai API OpenAI-compatible generik untuk klien eksternal lain bila dibutuhkan.
 - **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 24 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
@@ -40,7 +40,7 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
                                                         - REST Endpoints (/accounts, /posts)
                                                         - Claude Tool-Use Handler
                                                         - OpenAI-Compatible Adapter (/v1)
-                                                        - Analytics Dashboard + Embedded "Tanya AI" Panel (/analytics)
+                                                        - Analytics Dashboard (/analytics) + Tanya AI Chat Page (/chat)
                                                                       │
                                                                       ▼
                                                     [Browser - Dashboard + Chat, 1 Domain]
@@ -67,7 +67,7 @@ BRIGHT_DATA_API_TOKEN=isi-dengan-token-bright-data
 BRIGHT_DATA_SERP_ZONE=nama-zone-serp
 CHAT_ACTION_API_KEY=isi-dengan-secret-acak
 ```
-`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Scraper Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions`. Dashboard membaca nilai ini secara otomatis (di-render server-side ke dalam halaman) sehingga panel "Tanya AI" langsung terautentikasi tanpa konfigurasi tambahan.
+`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Scraper Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions`. Halaman `/chat` membaca nilai ini secara otomatis (di-render server-side ke dalam halaman) sehingga langsung terautentikasi tanpa konfigurasi tambahan.
 
 ### 3. Setting Routing / Domain (Tab Domains)
 - **Dashboard, Chat AI & API**: Arahkan ke service `api` port `8000` (satu domain untuk semuanya, misal `sosmed.easycorp.id`).
@@ -118,7 +118,7 @@ python3 -m unittest discover -s tests -p "test_*.py"
 | `POST` | `/accounts` | Daftarkan akun baru (`platform`, `username`, `is_own_brand`) |
 | `GET` | `/posts` | Query postingan (`keyword`, `platform`, `username`, `from`, `to`, `limit`, `offset`) |
 | `GET` | `/posts/summary` | Ringkasan engagement per akun (`account_id` atau `username`) |
-| `POST` | `/chat` | Endpoint utama chat dengan Claude tool-use (dipakai oleh panel "Tanya AI" di dashboard) |
+| `GET`/`POST` | `/chat` | `GET` menyajikan halaman chat "Tanya AI"; `POST` adalah endpoint chat dengan Claude tool-use |
 | `GET` | `/v1/models` | OpenAI-compatible model discovery (generik, untuk klien eksternal) |
 | `POST` | `/v1/chat/completions` | OpenAI-compatible chat completion (generik, untuk klien eksternal) |
 | `POST` | `/scrape/run` | Trigger proses scraping di background |

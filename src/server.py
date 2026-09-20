@@ -75,16 +75,17 @@ def require_api_key(
 # Bearer`) on the chat endpoints. Chat can translate natural-language messages into
 # Bright Data scrapes and monitoring mutations (see chat_actions.py), so — unlike the
 # zero-config internal-tool default for plain CRUD writes above — this is meant to be
-# set in any deployment reachable by more than the dashboard's own embedded "Tanya AI"
-# panel. Left unset, chat stays open (matches this project's existing zero-config
-# default) but a warning is logged once so the gap is visible in logs.
+# set in any deployment reachable by more than the dedicated "Tanya AI" chat page
+# (/chat) served by this app. Left unset, chat stays open (matches this project's
+# existing zero-config default) but a warning is logged once so the gap is visible
+# in logs.
 CHAT_ACTION_API_KEY = os.getenv("CHAT_ACTION_API_KEY", "").strip()
 if not CHAT_ACTION_API_KEY:
     logger.warning(
         "CHAT_ACTION_API_KEY is not set. Chat endpoints (POST /chat, /v1/chat/completions) are "
         "UNAUTHENTICATED and can trigger Bright Data scraping/monitoring mutations from any caller. "
         "Set CHAT_ACTION_API_KEY in Dokploy Environment to require an X-API-Key header on those "
-        "routes; the dashboard's embedded chat panel reads the same value automatically."
+        "routes; the dedicated Tanya AI chat page (/chat) reads the same value automatically."
     )
 
 
@@ -692,6 +693,13 @@ def serve_analytics_dashboard():
     """Serves the Looker Studio-style interactive social media analytics dashboard."""
     from .dashboard import render_analytics_dashboard_html
     return HTMLResponse(content=render_analytics_dashboard_html())
+
+
+@app.get("/chat", response_class=HTMLResponse)
+def serve_chat_page():
+    """Serves the dedicated "Tanya AI" chat page (standalone, linked from the dashboard)."""
+    from .dashboard import render_chat_page_html
+    return HTMLResponse(content=render_chat_page_html())
 
 
 # Static Web Dashboard Mount

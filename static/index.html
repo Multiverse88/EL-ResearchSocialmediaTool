@@ -50,10 +50,10 @@
       </div>
 
       <div class="flex items-center gap-3">
-        <button id="toggle-ai-panel-btn" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-gray-200 hover:border-gray-300 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors">
+        <a href="/chat" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-gray-200 hover:border-gray-300 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors">
           <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
           <span>Tanya AI</span>
-        </button>
+        </a>
         <button id="trigger-sync-btn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-colors shadow-sm">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
           <span id="sync-btn-label">Sync Sekarang</span>
@@ -62,39 +62,6 @@
     </div>
   </header>
 
-  <!-- Embedded AI Chat Drawer ("Tanya AI") -->
-  <div id="ai-panel-overlay" class="fixed inset-0 bg-black/30 z-40 hidden transition-opacity"></div>
-  <aside id="ai-panel-drawer" class="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white z-50 shadow-2xl translate-x-full transition-transform duration-300 flex flex-col">
-    <div class="p-5 border-b border-gray-100 flex items-center justify-between shrink-0">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center text-white shrink-0">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-        </div>
-        <div>
-          <div class="font-bold text-sm text-gray-900 leading-tight">Tanya AI EasyCorp</div>
-          <div class="text-[11px] text-gray-400">Analisis akun, topik & ide konten</div>
-        </div>
-      </div>
-      <button id="close-ai-panel-btn" class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-      </button>
-    </div>
-
-    <div id="ai-chat-messages" class="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
-      <div class="bg-white border border-gray-100 rounded-2xl rounded-tl-sm p-3.5 text-xs text-gray-700 shadow-sm max-w-[90%]">
-        Halo! Tanya apa saja soal performa @id.easylegal, @id.easytax, @id.easyoffice, atau topik kompetitor — atau minta aksi seperti "scrape akun X" langsung dari sini.
-      </div>
-    </div>
-
-    <div class="p-4 border-t border-gray-100 shrink-0">
-      <form id="ai-chat-form" class="flex items-center gap-2">
-        <input type="text" id="ai-chat-input" placeholder="Ketik pertanyaan atau perintah..." class="flex-1 bg-gray-50 border border-gray-200 rounded-full px-4 py-2.5 text-xs font-medium text-gray-800 focus:outline-none focus:border-red-400 transition-colors" autocomplete="off" />
-        <button type="submit" class="w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shrink-0 transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-        </button>
-      </form>
-    </div>
-  </aside>
 
   <!-- Main Container (Matching EasyLegal Analytics.tsx) -->
   <main class="p-6 max-w-7xl mx-auto space-y-6">
@@ -456,14 +423,12 @@
   <div id="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl bg-gray-900 text-white font-semibold text-xs shadow-2xl transition-all opacity-0 pointer-events-none"></div>
 
   <script>
-    const CHAT_ACTION_API_KEY = "__CHAT_ACTION_API_KEY__";
     let currentBrand = 'all';
     let currentPlatform = 'all';
     let currentDays = 30;
     let currentGranularity = 'day';
     let waveChart = null;
     let topicBarChart = null;
-    let aiChatHistory = [];
 
     document.addEventListener('DOMContentLoaded', () => {
       initListeners();
@@ -515,81 +480,6 @@
           }, 5000);
         }
       });
-
-      initAiChatPanel();
-    }
-
-    function initAiChatPanel() {
-      const openBtn = document.getElementById('toggle-ai-panel-btn');
-      const closeBtn = document.getElementById('close-ai-panel-btn');
-      const overlay = document.getElementById('ai-panel-overlay');
-      const form = document.getElementById('ai-chat-form');
-
-      openBtn.addEventListener('click', openAiPanel);
-      closeBtn.addEventListener('click', closeAiPanel);
-      overlay.addEventListener('click', closeAiPanel);
-
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const input = document.getElementById('ai-chat-input');
-        const message = input.value.trim();
-        if (!message) return;
-        input.value = '';
-        sendAiChatMessage(message);
-      });
-    }
-
-    function openAiPanel() {
-      document.getElementById('ai-panel-overlay').classList.remove('hidden');
-      document.getElementById('ai-panel-drawer').classList.remove('translate-x-full');
-      document.getElementById('ai-chat-input').focus();
-    }
-
-    function closeAiPanel() {
-      document.getElementById('ai-panel-overlay').classList.add('hidden');
-      document.getElementById('ai-panel-drawer').classList.add('translate-x-full');
-    }
-
-    function appendAiChatMessage(role, text) {
-      const container = document.getElementById('ai-chat-messages');
-      const bubble = document.createElement('div');
-      if (role === 'user') {
-        bubble.className = 'bg-red-600 text-white rounded-2xl rounded-tr-sm p-3.5 text-xs shadow-sm max-w-[90%] ml-auto whitespace-pre-wrap';
-      } else {
-        bubble.className = 'bg-white border border-gray-100 rounded-2xl rounded-tl-sm p-3.5 text-xs text-gray-700 shadow-sm max-w-[90%] whitespace-pre-wrap';
-      }
-      bubble.textContent = text;
-      container.appendChild(bubble);
-      container.scrollTop = container.scrollHeight;
-      return bubble;
-    }
-
-    async function sendAiChatMessage(message) {
-      appendAiChatMessage('user', message);
-      aiChatHistory.push({ role: 'user', content: message });
-      const loadingBubble = appendAiChatMessage('assistant', 'Sedang menganalisis...');
-
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (CHAT_ACTION_API_KEY && !CHAT_ACTION_API_KEY.startsWith('__')) {
-          headers['X-API-Key'] = CHAT_ACTION_API_KEY;
-        }
-        const res = await fetch('/chat', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ message, messages: aiChatHistory }),
-        });
-        const data = await res.json();
-        const reply = data.reply || data.message || 'Maaf, tidak ada jawaban yang bisa ditampilkan.';
-        loadingBubble.textContent = reply;
-        aiChatHistory.push({ role: 'assistant', content: reply });
-
-        if (data.action_receipts && data.action_receipts.length > 0) {
-          loadAllData();
-        }
-      } catch (err) {
-        loadingBubble.textContent = 'Gagal menghubungi AI: ' + err.message;
-      }
     }
 
     function switchMainTab(tab) {
