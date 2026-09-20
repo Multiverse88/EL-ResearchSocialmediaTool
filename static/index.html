@@ -1,661 +1,622 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EasyCorp Social Media Intelligence & Analytics</title>
-  <link rel="preconnect" href="https://api.fontshare.com" />
-  <link href="https://api.fontshare.com/v2/css?f[]=general-sans@700,600,500,400&f[]=satoshi@900,800,700,500,400&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['General Sans', 'sans-serif'],
-            display: ['Satoshi', 'sans-serif'],
-          },
-          colors: {
-            canvas: '#f1f3f7',
-            card: '#ffffff',
-            accent: {
-              rose: '#e11d48',
-              roseHover: '#be123c',
-              dark: '#18181b',
-              blue: '#2563eb',
-              cyan: '#0891b2',
-              emerald: '#059669',
-              amber: '#d97706',
-            },
-          },
-          boxShadow: {
-            card: '0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02)',
-            cardHover: '0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.04)',
-          }
-        }
-      }
-    }
-  </script>
   <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
     body {
-      background-color: #f1f3f7;
+      background-color: #f8fafc;
       color: #0f172a;
-      font-family: 'General Sans', sans-serif;
-      overflow-x: hidden;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 9999px;
-    }
-    .pill-active {
-      background-color: #18181b !important;
-      color: #ffffff !important;
-    }
-    .brand-tab-active {
-      background-color: #ffffff !important;
-      color: #0f172a !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      min-height: 100vh;
     }
     .badge-ig { background-color: #fff1f2; color: #e11d48; border: 1px solid #ffe4e6; }
     .badge-th { background-color: #f8fafc; color: #0f172a; border: 1px solid #e2e8f0; }
     .badge-tt { background-color: #ecfeff; color: #0891b2; border: 1px solid #cffafe; }
+    .tab-active {
+      background-color: #dc2626 !important;
+      color: #ffffff !important;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+    }
+    .granularity-active {
+      background-color: #ffffff !important;
+      color: #111827 !important;
+      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    }
   </style>
 </head>
-<body class="antialiased selection:bg-slate-900 selection:text-white flex min-h-screen">
+<body class="antialiased text-slate-800">
 
-  <!-- Left Sidebar Navigation Dock -->
-  <aside class="w-64 bg-white border-r border-slate-200/80 p-5 flex flex-col justify-between hidden lg:flex shrink-0">
-    <div>
-      <!-- Brand Logo -->
-      <div class="flex items-center gap-3 px-2 py-3 mb-6">
-        <div class="w-8 h-8 rounded-full bg-slate-950 flex items-center justify-center font-display font-black text-white text-xs">
+  <!-- Top Navigation Header -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center font-extrabold text-white text-sm shadow-sm">
           EC
         </div>
-        <div class="flex flex-col">
-          <span class="font-display font-bold text-sm tracking-tight text-slate-900">EasyCorp Intel</span>
-          <span class="text-[11px] text-slate-400 font-medium">sosmed.easycorp.id</span>
+        <div>
+          <span class="font-bold text-base text-gray-900 leading-tight block">EasyCorp Intelligence</span>
+          <span class="text-xs text-gray-500 font-medium">sosmed.easycorp.id</span>
         </div>
       </div>
 
-      <!-- Quick Nav Links -->
-      <div class="space-y-1 text-xs font-semibold text-slate-600 mb-6">
-        <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-3 py-1.5">Overview</div>
-        <button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-900 bg-slate-100 font-bold text-left transition-colors">
-          <svg class="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-          Executive Report
-        </button>
-        <button onclick="switchBrand('easylegal')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-left transition-colors">
-          <span class="flex items-center gap-2.5">
-            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-            EasyLegal
-          </span>
-          <span class="text-[10px] text-slate-400 font-bold">IG/TT/TH</span>
-        </button>
-        <button onclick="switchBrand('easytax')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-left transition-colors">
-          <span class="flex items-center gap-2.5">
-            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
-            EasyTax
-          </span>
-          <span class="text-[10px] text-slate-400 font-bold">Instagram</span>
-        </button>
-        <button onclick="switchBrand('easyoffice')" class="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-left transition-colors">
-          <span class="flex items-center gap-2.5">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-            EasyOffice
-          </span>
-          <span class="text-[10px] text-slate-400 font-bold">Instagram</span>
+      <div class="flex items-center gap-3">
+        <a href="http://100.81.215.57:3080" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-gray-200 hover:border-gray-300 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors">
+          <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+          <span>Open WebUI Chat</span>
+        </a>
+        <button id="trigger-sync-btn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-colors shadow-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          <span id="sync-btn-label">Sync Sekarang</span>
         </button>
       </div>
+    </div>
+  </header>
 
-      <!-- Reports Directory -->
-      <div class="space-y-1 text-xs font-semibold text-slate-600">
-        <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-3 py-1.5">Intelligence</div>
-        <a href="#content-radar-section" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-50 text-left transition-colors">
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
-          Content Radar
-        </a>
-        <a href="#topic-dominance-section" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-50 text-left transition-colors">
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-          Shared Topics
-        </a>
-        <a href="http://100.81.215.57:3080" target="_blank" rel="noopener noreferrer" class="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-left transition-colors text-blue-600 font-bold">
-          <span class="flex items-center gap-2.5">
-            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-            Open WebUI Chat
+  <!-- Main Container (Matching EasyLegal Analytics.tsx) -->
+  <main class="p-6 max-w-7xl mx-auto space-y-6">
+
+    <!-- 1. Top Bar & Global Filters Card (EasyLegal Style) -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2.5">
+            <span class="p-2 bg-red-50 text-red-600 rounded-xl">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+            </span>
+            Social Media Analytics & Intel
+          </h1>
+          <p class="text-sm text-gray-500 mt-1">
+            Pemantauan performa 3 akun EasyCorp (@id.easylegal, @id.easytax, @id.easyoffice) di Instagram, Threads, dan TikTok serta benchmark topik kompetitor
+          </p>
+        </div>
+
+        <!-- Global Filter Controllers -->
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Brand Selector Dropdown -->
+          <div class="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-sm">
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+            <select id="filter-brand-select" class="bg-transparent border-none text-gray-800 font-medium focus:ring-0 cursor-pointer text-xs sm:text-sm">
+              <option value="all">Semua Akun Brand (3 Unit)</option>
+              <option value="easylegal">EasyLegal (@id.easylegal)</option>
+              <option value="easytax">EasyTax (@id.easytax)</option>
+              <option value="easyoffice">EasyOffice (@id.easyoffice)</option>
+            </select>
+          </div>
+
+          <!-- Platform Selector Dropdown -->
+          <div class="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-sm">
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+            <select id="filter-platform-select" class="bg-transparent border-none text-gray-800 font-medium focus:ring-0 cursor-pointer text-xs sm:text-sm">
+              <option value="all">Semua Platform (IG/Threads/TikTok)</option>
+              <option value="instagram">Instagram</option>
+              <option value="threads">Threads</option>
+              <option value="tiktok">TikTok</option>
+            </select>
+          </div>
+
+          <!-- Date Preset Selector -->
+          <div class="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-sm">
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <select id="filter-days-select" class="bg-transparent border-none text-gray-800 font-medium focus:ring-0 cursor-pointer text-xs sm:text-sm">
+              <option value="3">Hari Ini / 3 Hari</option>
+              <option value="7">7 Hari Terakhir</option>
+              <option value="30" selected>30 Hari Terakhir</option>
+              <option value="90">Kuartal (90 Hari)</option>
+              <option value="3650">Semua Waktu</option>
+            </select>
+          </div>
+
+          <!-- Refresh Button -->
+          <button id="refresh-dashboard-btn" class="p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors" title="Muat ulang data">
+            <svg class="w-4 h-4" id="refresh-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Buttons & Granularity Control (EasyLegal Style) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
+        <div class="flex items-center gap-2">
+          <button id="nav-tab-overview" onclick="switchMainTab('overview')" class="px-4 py-2 rounded-xl text-sm font-semibold transition-all tab-active">
+            Ringkasan & Metrik Utama
+          </button>
+          <button id="nav-tab-detail" onclick="switchMainTab('detail')" class="px-4 py-2 rounded-xl text-sm font-semibold transition-all bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1.5">
+            <span>Laporan Detail & Grafik Lengkap</span>
+            <span class="px-1.5 py-0.2 bg-red-100 text-red-700 text-[10px] font-mono rounded-full font-bold">Deep Dive</span>
+          </button>
+        </div>
+
+        <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-xl text-xs font-semibold self-start sm:self-auto">
+          <span class="text-gray-400 px-2 flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Granulasi:
           </span>
-          <span class="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">AI</span>
-        </a>
+          <button id="granularity-day-btn" onclick="setGranularity('day')" class="px-3 py-1.5 rounded-lg transition-all granularity-active">
+            Per Hari
+          </button>
+          <button id="granularity-week-btn" onclick="setGranularity('week')" class="px-3 py-1.5 rounded-lg transition-all text-gray-600 hover:text-gray-900">
+            Per Minggu
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Bottom Status Card -->
-    <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs">
-      <div class="flex items-center justify-between font-bold text-slate-800">
-        <span>Daily Auto-Sync</span>
-        <span class="text-[10px] text-emerald-600 font-extrabold uppercase">08:00 WIB</span>
-      </div>
-      <div class="text-[11px] text-slate-500 mt-1">Multi-token pool active.</div>
-    </div>
-  </aside>
+    <!-- TAB 1: RINGKASAN & METRIK UTAMA -->
+    <div id="view-overview" class="space-y-6">
 
-  <!-- Main Content Viewport -->
-  <div class="flex-1 flex flex-col min-w-0">
-
-    <!-- Top Action Header Bar -->
-    <header class="h-20 bg-white border-b border-slate-200/80 px-6 sm:px-10 flex items-center justify-between gap-4 sticky top-0 z-30">
-      <!-- Search Input -->
-      <div class="relative w-full max-w-md hidden sm:block">
-        <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-        <input type="text" id="global-search-input" placeholder="Search keywords, verified captions, or hooks..." class="w-full bg-slate-50 border border-slate-200 rounded-full pl-10 pr-4 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-slate-400 transition-colors" />
-      </div>
-
-      <!-- Brand Avatar Switcher Pills -->
-      <div class="flex items-center gap-2 overflow-x-auto custom-scrollbar py-1">
-        <button onclick="switchBrand('all')" class="brand-pill-btn brand-tab-active flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shrink-0" data-brand="all">
-          <span class="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px]">ALL</span>
-          <span>All Units</span>
-        </button>
-        <button onclick="switchBrand('easylegal')" class="brand-pill-btn flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shrink-0" data-brand="easylegal">
-          <span class="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">EL</span>
-          <span>EasyLegal</span>
-        </button>
-        <button onclick="switchBrand('easytax')" class="brand-pill-btn flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shrink-0" data-brand="easytax">
-          <span class="w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px]">ET</span>
-          <span>EasyTax</span>
-        </button>
-        <button onclick="switchBrand('easyoffice')" class="brand-pill-btn flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shrink-0" data-brand="easyoffice">
-          <span class="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center text-[10px]">EO</span>
-          <span>EasyOffice</span>
-        </button>
-      </div>
-
-      <!-- Action Controls -->
-      <div class="flex items-center gap-3 shrink-0">
-        <button id="trigger-sync-btn" class="h-9 px-4 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2">
-          <span>Trigger Sync</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Page Body Container -->
-    <main class="p-6 sm:p-10 space-y-8 max-w-7xl w-full mx-auto">
-
-      <!-- Executive Performance Banner (Inspired by Image Hero) -->
-      <section class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-card">
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <div>
-            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Performance Report</div>
-            <h1 class="text-2xl sm:text-3xl font-display font-black text-slate-900 tracking-tight mt-0.5">Verified Reach & Engagement</h1>
+      <!-- Quick Banner (EasyLegal Style) -->
+      <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        <div class="flex items-center gap-3">
+          <div class="p-2 bg-white/10 rounded-xl text-amber-400 shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           </div>
+          <div>
+            <h2 class="text-sm font-bold text-white">Sinkronisasi Harian Otomatis Aktif Pukul 08:00 WIB</h2>
+            <p class="text-xs text-slate-300">Data otomatis ter-update setiap hari untuk 3 akun resmi EasyCorp dan topik kompetitor terkait.</p>
+          </div>
+        </div>
+        <button onclick="switchMainTab('detail')" class="inline-flex items-center gap-1.5 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap self-start sm:self-auto">
+          <span>Buka Laporan Detail</span>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+        </button>
+      </div>
 
-          <!-- Timeframe & Channel Controls -->
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center bg-slate-100 p-1 rounded-full text-xs font-bold text-slate-600" id="channel-tabs">
-              <button onclick="switchPlatform('all')" class="channel-btn pill-active px-3.5 py-1 rounded-full transition-all" data-plat="all">All Channels</button>
-              <button onclick="switchPlatform('instagram')" class="channel-btn px-3.5 py-1 rounded-full transition-all" data-plat="instagram">Instagram</button>
-              <button onclick="switchPlatform('threads')" class="channel-btn px-3.5 py-1 rounded-full transition-all" data-plat="threads">Threads</button>
-              <button onclick="switchPlatform('tiktok')" class="channel-btn px-3.5 py-1 rounded-full transition-all" data-plat="tiktok">TikTok</button>
+      <!-- 4 Summary Stat Cards (Exact EasyLegal Layout) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1: Total Views -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-gray-500 text-sm font-medium">
+            <span>Total Tayangan (Views)</span>
+            <span class="p-2 bg-rose-50 text-rose-600 rounded-xl">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+            </span>
+          </div>
+          <div class="mt-4">
+            <div class="text-3xl font-extrabold text-gray-900 font-mono" id="stat-total-views">0</div>
+            <div class="text-xs text-rose-600 mt-1 font-medium flex items-center gap-1">
+              <span id="stat-avg-views">0</span> rata-rata views per video
             </div>
           </div>
         </div>
 
-        <!-- Metric Scoreboard Row -->
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
+        <!-- Card 2: Total Posts -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-gray-500 text-sm font-medium">
+            <span>Postingan Termonitor</span>
+            <span class="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            </span>
+          </div>
+          <div class="mt-4">
+            <div class="text-3xl font-extrabold text-gray-900 font-mono" id="stat-total-posts">0</div>
+            <div class="text-xs text-gray-400 mt-1 flex items-center justify-between">
+              <span>Brand: <b class="text-gray-700" id="stat-sub-brand-posts">0</b></span>
+              <span>Kompetitor: <b class="text-amber-600" id="stat-sub-comp-posts">0</b></span>
+            </div>
+          </div>
+        </div>
 
-          <!-- Primary Metric (Big Number) -->
-          <div class="md:col-span-5 flex flex-col justify-between p-6 rounded-2xl bg-slate-50 border border-slate-200/80">
+        <!-- Card 3: Total Likes & Comments -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-gray-500 text-sm font-medium">
+            <span>Total Interaksi</span>
+            <span class="p-2 bg-amber-50 text-amber-600 rounded-xl">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"></path></svg>
+            </span>
+          </div>
+          <div class="mt-4">
+            <div class="text-3xl font-extrabold text-gray-900 font-mono" id="stat-total-likes">0</div>
+            <div class="text-xs text-gray-400 mt-1">
+              Likes & komentar dari audiens aktif
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 4: Engagement Rate -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div class="flex items-center justify-between text-gray-500 text-sm font-medium">
+            <span>Rata-Rata Engagement</span>
+            <span class="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </span>
+          </div>
+          <div class="mt-4">
+            <div class="text-3xl font-extrabold text-emerald-600 font-mono" id="stat-avg-er">0.0%</div>
+            <div class="text-xs text-gray-400 mt-1">
+              Rasio interaksi terhadap tayangan
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row: Area Timeline Chart & Channel Share (EasyLegal Style) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Area Chart: Timeline (2 cols) -->
+        <div class="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div>
-              <div class="text-xs font-bold text-slate-500 uppercase tracking-wide">Aggregated Views</div>
-              <div class="flex items-baseline gap-3 mt-2">
-                <span class="font-display font-black text-4xl sm:text-5xl text-slate-950 tracking-tight" id="hero-total-views">0</span>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
-                  +18.4%
-                </span>
-              </div>
-              <div class="text-xs text-slate-400 mt-2">Verified organic video & feed impressions across active units.</div>
+              <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                Tren Tayangan (Views) & Interaksi Harian
+              </h2>
+              <p class="text-xs text-gray-500">Pertumbuhan kecepatan tayangan organik media sosial EasyCorp dari hari ke hari</p>
             </div>
-
-            <!-- Proportional Channel Bar -->
-            <div class="mt-6 pt-6 border-t border-slate-200">
-              <div class="flex justify-between text-xs font-bold text-slate-600 mb-2">
-                <span>Channel Volume Share</span>
-                <span id="channel-share-summary">100% Monitored</span>
-              </div>
-              <div class="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden flex">
-                <div class="h-full bg-rose-500" style="width: 55%;" title="Instagram"></div>
-                <div class="h-full bg-slate-900" style="width: 25%;" title="Threads"></div>
-                <div class="h-full bg-cyan-500" style="width: 20%;" title="TikTok"></div>
-              </div>
-            </div>
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-50 text-red-600 self-start sm:self-auto">
+              Linear Trajectory
+            </span>
           </div>
-
-          <!-- Secondary Metric Tiles -->
-          <div class="md:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
-
-            <!-- Card 1: Top Account -->
-            <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
-              <div>
-                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Lead Profile</span>
-                <div class="text-xl font-display font-black text-slate-900 mt-1" id="kpi-top-profile">@id.easylegal</div>
-                <div class="text-xs text-slate-500 mt-1" id="kpi-top-profile-sub">Primary Unit</div>
-              </div>
-              <div class="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-600">
-                <span>Posts</span>
-                <span class="font-bold text-slate-900" id="kpi-total-posts">0</span>
-              </div>
-            </div>
-
-            <!-- Card 2: Best Performing Post (Dark Card matching reference) -->
-            <div class="p-5 rounded-2xl bg-slate-950 text-white flex flex-col justify-between shadow-lg">
-              <div>
-                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                  <span>Top Virality</span>
-                  <span class="text-amber-400 font-black">STAR</span>
-                </div>
-                <div class="text-2xl font-display font-black text-white mt-1" id="kpi-max-views">0</div>
-                <div class="text-xs text-slate-300 mt-1 line-clamp-2" id="kpi-top-hook">Peak verified views single post.</div>
-              </div>
-              <div class="pt-4 mt-4 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>Peak Likes</span>
-                <span class="font-bold text-emerald-400" id="kpi-max-likes">0</span>
-              </div>
-            </div>
-
-            <!-- Card 3: Summary Stat Pills (Matching Deals / Value / Win rate in reference) -->
-            <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between space-y-2">
-              <div class="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
-                <span class="text-slate-500 font-medium">Avg Likes</span>
-                <span class="font-bold text-slate-900" id="kpi-avg-likes">0</span>
-              </div>
-              <div class="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
-                <span class="text-slate-500 font-medium">Avg Views</span>
-                <span class="font-bold text-rose-600" id="kpi-avg-views">0</span>
-              </div>
-              <div class="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
-                <span class="text-slate-500 font-medium">Avg ER</span>
-                <span class="font-bold text-emerald-600" id="kpi-avg-er">0.0%</span>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      <!-- Middle Bento Grid (Channel Breakdown, Topic Bars, Account Matrix) -->
-      <section class="grid grid-cols-1 md:grid-cols-12 gap-6">
-
-        <!-- Card 1: Channel Breakdown List (md:col-span-4) -->
-        <div class="md:col-span-4 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-5">
-              <h2 class="font-display font-bold text-base text-slate-900">Platform Breakdown</h2>
-              <span class="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">3 Channels</span>
-            </div>
-
-            <div class="space-y-3.5">
-              <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <span class="badge-ig text-[10px] font-bold px-2 py-1 rounded-lg">INSTAGRAM</span>
-                  <div>
-                    <div class="text-xs font-bold text-slate-800">3 Accounts</div>
-                    <div class="text-[10px] text-slate-400">@id.easylegal, easytax, easyoffice</div>
-                  </div>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs font-bold text-slate-900" id="sub-ig-posts">0 posts</div>
-                  <div class="text-[10px] text-rose-600 font-semibold" id="sub-ig-views">0 views</div>
-                </div>
-              </div>
-
-              <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <span class="badge-th text-[10px] font-bold px-2 py-1 rounded-lg">THREADS</span>
-                  <div>
-                    <div class="text-xs font-bold text-slate-800">@id.easylegal</div>
-                    <div class="text-[10px] text-slate-400">Text & Discussions</div>
-                  </div>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs font-bold text-slate-900" id="sub-th-posts">0 posts</div>
-                  <div class="text-[10px] text-slate-600 font-semibold" id="sub-th-likes">0 likes</div>
-                </div>
-              </div>
-
-              <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <span class="badge-tt text-[10px] font-bold px-2 py-1 rounded-lg">TIKTOK</span>
-                  <div>
-                    <div class="text-xs font-bold text-slate-800">@id.easylegal</div>
-                    <div class="text-[10px] text-slate-400">Short Video Education</div>
-                  </div>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs font-bold text-slate-900" id="sub-tt-posts">0 videos</div>
-                  <div class="text-[10px] text-cyan-600 font-semibold" id="sub-tt-views">0 views</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="pt-5 mt-5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>Verified Engagement</span>
-            <span class="font-bold text-slate-900" id="card-channel-er">0.0% Average</span>
+          <div class="h-72 w-full relative">
+            <canvas id="engagementWaveCanvas"></canvas>
           </div>
         </div>
 
-        <!-- Card 2: Shared Topic Dominance Bar Chart (md:col-span-4) -->
-        <div id="topic-dominance-section" class="md:col-span-4 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card flex flex-col justify-between">
+        <!-- Channel Share Card (1 col) -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
           <div>
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h2 class="font-display font-bold text-base text-slate-900">Topic Dominance</h2>
-                <div class="text-xs text-slate-400 mt-0.5">Brand vs Competitors per topic</div>
+            <h2 class="text-base font-bold text-gray-900 mb-1">Distribusi Kanal</h2>
+            <p class="text-xs text-gray-500 mb-4">Porsi konten dan volume views per platform resmi</p>
+
+            <div class="space-y-3">
+              <div class="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <span class="badge-ig text-[10px] font-bold px-2 py-0.5 rounded">INSTAGRAM</span>
+                  <div class="text-xs font-bold text-gray-800">3 Akun Resmi</div>
+                </div>
+                <div class="text-right text-xs">
+                  <div class="font-bold text-gray-900" id="dist-ig-posts">0 post</div>
+                  <div class="text-[11px] text-rose-600 font-medium" id="dist-ig-views">0 views</div>
+                </div>
               </div>
-              <span class="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">Niche Share</span>
-            </div>
-            <div class="h-56 w-full relative">
-              <canvas id="topicBarChartCanvas"></canvas>
+
+              <div class="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <span class="badge-th text-[10px] font-bold px-2 py-0.5 rounded">THREADS</span>
+                  <div class="text-xs font-bold text-gray-800">@id.easylegal</div>
+                </div>
+                <div class="text-right text-xs">
+                  <div class="font-bold text-gray-900" id="dist-th-posts">0 post</div>
+                  <div class="text-[11px] text-gray-500 font-medium" id="dist-th-likes">0 likes</div>
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <span class="badge-tt text-[10px] font-bold px-2 py-0.5 rounded">TIKTOK</span>
+                  <div class="text-xs font-bold text-gray-800">@id.easylegal</div>
+                </div>
+                <div class="text-right text-xs">
+                  <div class="font-bold text-gray-900" id="dist-tt-posts">0 video</div>
+                  <div class="text-[11px] text-cyan-600 font-medium" id="dist-tt-views">0 views</div>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="pt-4 border-t border-slate-100 text-[11px] text-slate-500 flex justify-between">
-            <span>Topics: PT, Pajak, Virtual Office</span>
-            <span class="font-bold text-slate-700">Views Index</span>
+
+          <div class="pt-4 mt-4 border-t border-gray-100 flex justify-between items-center text-xs text-gray-500">
+            <span>Rata-Rata Engagement</span>
+            <span class="font-bold text-gray-900" id="dist-avg-er">0.0%</span>
           </div>
         </div>
+      </div>
 
-        <!-- Card 3: Brand Units Matrix Table (md:col-span-4) -->
-        <div class="md:col-span-4 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card flex flex-col justify-between">
+      <!-- Verified Content & Hook Radar Table (EasyLegal Style) -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="font-display font-bold text-base text-slate-900">Unit Accounts</h2>
-              <span class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">Verified</span>
-            </div>
-
-            <div class="divide-y divide-slate-100 text-xs">
-              <div class="py-3 flex items-center justify-between">
-                <div>
-                  <div class="font-bold text-slate-900">EasyLegal</div>
-                  <div class="text-[10px] text-slate-400">@id.easylegal</div>
-                </div>
-                <div class="text-right">
-                  <div class="font-bold text-slate-900" id="unit-legal-views">0</div>
-                  <div class="text-[10px] text-slate-400">Total Views</div>
-                </div>
-              </div>
-              <div class="py-3 flex items-center justify-between">
-                <div>
-                  <div class="font-bold text-slate-900">EasyTax</div>
-                  <div class="text-[10px] text-slate-400">@id.easytax</div>
-                </div>
-                <div class="text-right">
-                  <div class="font-bold text-slate-900" id="unit-tax-views">0</div>
-                  <div class="text-[10px] text-slate-400">Total Views</div>
-                </div>
-              </div>
-              <div class="py-3 flex items-center justify-between">
-                <div>
-                  <div class="font-bold text-slate-900">EasyOffice</div>
-                  <div class="text-[10px] text-slate-400">@id.easyoffice</div>
-                </div>
-                <div class="text-right">
-                  <div class="font-bold text-slate-900" id="unit-office-views">0</div>
-                  <div class="text-[10px] text-slate-400">Total Views</div>
-                </div>
-              </div>
-            </div>
+            <h2 class="text-base font-bold text-gray-900">Daftar Konten & Analisis Formula Hook</h2>
+            <p class="text-xs text-gray-500">Postingan riil berkinerja tertinggi dengan cuplikan hook pembuka 2 detik pertama</p>
           </div>
-
-          <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Overall Ratio</span>
-            <span class="font-bold text-slate-800" id="kpi-ratio-summary">100% Brand Owned</span>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- Bottom Bento Grid (Vibrant Rose Accent Card + Wave Trajectory Chart) -->
-      <section class="grid grid-cols-1 md:grid-cols-12 gap-6">
-
-        <!-- Card 1: Vibrant Rose Accent Card (md:col-span-5) -->
-        <div class="md:col-span-5 bg-gradient-to-br from-rose-600 to-rose-700 text-white rounded-3xl p-7 shadow-card flex flex-col justify-between">
-          <div>
-            <div class="text-[11px] font-bold uppercase tracking-wider text-rose-200">Velocity Index</div>
-            <div class="text-3xl font-display font-black tracking-tight mt-2" id="accent-total-views">0</div>
-            <div class="text-xs text-rose-100/90 mt-1">Average verified reach across all 3 units.</div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4 pt-6 mt-6 border-t border-rose-500/60 text-xs">
-            <div>
-              <div class="text-rose-200 text-[11px]">Total Interactions</div>
-              <div class="text-xl font-bold font-display mt-0.5" id="accent-total-likes">0</div>
-            </div>
-            <div>
-              <div class="text-rose-200 text-[11px]">Average Engagement</div>
-              <div class="text-xl font-bold font-display mt-0.5" id="accent-avg-er">0.0%</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Card 2: Platform Engagement Wave Chart (md:col-span-7) -->
-        <div class="md:col-span-7 bg-white rounded-3xl p-7 border border-slate-200/80 shadow-card flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h2 class="font-display font-bold text-base text-slate-900">Engagement Dynamics</h2>
-                <div class="text-xs text-slate-400 mt-0.5">Verified view trajectory over time</div>
-              </div>
-              <span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">Daily Trajectory</span>
-            </div>
-            <div class="h-56 w-full relative">
-              <canvas id="engagementWaveCanvas"></canvas>
-            </div>
-          </div>
-          <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Aggregated Time-Series</span>
-            <span class="font-bold text-slate-800">Instagram, Threads, TikTok</span>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- Verified Content Radar Table -->
-      <section id="content-radar-section" class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-card space-y-5">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 class="font-display font-bold text-lg text-slate-900">Verified Content & Tactical Hook Radar</h2>
-            <p class="text-xs text-slate-400 mt-0.5">Top-performing posts indexed by views, isolating opening hooks for tactical content planning.</p>
-          </div>
-          <div class="text-xs font-semibold text-slate-500" id="radar-count-label">
-            Loading records...
-          </div>
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 self-start sm:self-auto" id="radar-count-label">
+            Memuat postingan...
+          </span>
         </div>
 
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs">
-            <thead class="bg-slate-50 text-slate-400 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px]">
+            <thead class="bg-gray-50 text-gray-500 font-bold border-b border-gray-200 uppercase tracking-wider text-[10px]">
               <tr>
-                <th class="py-3 px-4">Channel</th>
-                <th class="py-3 px-4">Account</th>
-                <th class="py-3 px-4 max-w-sm">Opening Hook / Caption Excerpt</th>
+                <th class="py-3 px-4">Platform</th>
+                <th class="py-3 px-4">Akun</th>
+                <th class="py-3 px-4">Tipe</th>
+                <th class="py-3 px-4 max-w-sm">Formula Hook / Caption</th>
                 <th class="py-3 px-4 text-right">Views</th>
                 <th class="py-3 px-4 text-right">Likes</th>
                 <th class="py-3 px-4 text-right">ER</th>
-                <th class="py-3 px-4 text-center">Reference</th>
+                <th class="py-3 px-4 text-center">Aksi</th>
               </tr>
             </thead>
-            <tbody id="posts-table-body" class="divide-y divide-slate-100">
-              <tr>
-                <td colspan="7" class="py-8 text-center text-slate-400">Querying verified posts...</td>
-              </tr>
+            <tbody id="posts-table-body" class="divide-y divide-gray-100">
+              <tr><td colspan="8" class="py-8 text-center text-gray-400">Memuat data konten...</td></tr>
             </tbody>
           </table>
         </div>
-      </section>
+      </div>
 
-    </main>
-  </div>
+    </div>
 
-  <!-- Notification Toast -->
-  <div id="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl bg-slate-900 text-white font-semibold text-xs shadow-2xl transition-all opacity-0 pointer-events-none"></div>
+    <!-- TAB 2: LAPORAN DETAIL & GRAFIK LENGKAP (DEEP DIVE) -->
+    <div id="view-detail" class="space-y-6 hidden">
+
+      <!-- Section: Topic Dominance Radar (EasyCorp vs Competitor) -->
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
+              Dominasi Topik Pasar: Brand EasyCorp vs Kompetitor Luar
+            </h2>
+            <p class="text-xs text-gray-500">Perbandingan volume tayangan pada ceruk topik identik: Pendirian PT, Konsultasi Pajak, dan Virtual Office</p>
+          </div>
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 self-start sm:self-auto border border-amber-200">
+            Niche Benchmark
+          </span>
+        </div>
+
+        <div class="h-80 w-full relative">
+          <canvas id="topicBarChartCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Section: Unit Performance Comparison (EasyLegal vs EasyTax vs EasyOffice) -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-blue-600 uppercase">EasyLegal</span>
+              <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold">PT & Izin</span>
+            </div>
+            <div class="text-2xl font-bold font-mono text-gray-900 mt-2" id="unit-legal-views">0</div>
+            <div class="text-xs text-gray-500 mt-1">Total verified impressions</div>
+          </div>
+          <div class="pt-4 mt-4 border-t border-gray-100 text-xs text-gray-500 flex justify-between">
+            <span>Handles:</span>
+            <span class="font-bold text-gray-800">@id.easylegal</span>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-rose-600 uppercase">EasyTax</span>
+              <span class="text-[10px] bg-rose-50 text-rose-700 px-2 py-0.5 rounded font-bold">Pajak & SPT</span>
+            </div>
+            <div class="text-2xl font-bold font-mono text-gray-900 mt-2" id="unit-tax-views">0</div>
+            <div class="text-xs text-gray-500 mt-1">Total verified impressions</div>
+          </div>
+          <div class="pt-4 mt-4 border-t border-gray-100 text-xs text-gray-500 flex justify-between">
+            <span>Handles:</span>
+            <span class="font-bold text-gray-800">@id.easytax</span>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-amber-600 uppercase">EasyOffice</span>
+              <span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-bold">Virtual Office</span>
+            </div>
+            <div class="text-2xl font-bold font-mono text-gray-900 mt-2" id="unit-office-views">0</div>
+            <div class="text-xs text-gray-500 mt-1">Total verified impressions</div>
+          </div>
+          <div class="pt-4 mt-4 border-t border-gray-100 text-xs text-gray-500 flex justify-between">
+            <span>Handles:</span>
+            <span class="font-bold text-gray-800">@id.easyoffice</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl bg-gray-900 text-white font-semibold text-xs shadow-2xl transition-all opacity-0 pointer-events-none"></div>
 
   <script>
-    let activeBrand = 'all';
-    let activePlatform = 'all';
-    let topicBarChart = null;
+    let currentBrand = 'all';
+    let currentPlatform = 'all';
+    let currentDays = 30;
+    let currentGranularity = 'day';
     let waveChart = null;
+    let topicBarChart = null;
 
     document.addEventListener('DOMContentLoaded', () => {
-      loadDashboard();
-      initGSAP();
-
-      const syncBtn = document.getElementById('trigger-sync-btn');
-      if (syncBtn) {
-        syncBtn.addEventListener('click', async () => {
-          syncBtn.disabled = true;
-          syncBtn.textContent = 'Synchronizing...';
-          showToast('Triggering parallel multi-token sync in background...');
-
-          try {
-            const res = await fetch('/api/cron/daily-sync?max_posts=10&background=true', { method: 'POST' });
-            const json = await res.json();
-            showToast('Sync initiated. Data refreshing in 10s...');
-            setTimeout(loadDashboard, 10000);
-          } catch (e) {
-            showToast('Failed to trigger sync: ' + e.message);
-          } finally {
-            setTimeout(() => {
-              syncBtn.disabled = false;
-              syncBtn.textContent = 'Trigger Sync';
-            }, 5000);
-          }
-        });
-      }
+      initListeners();
+      loadAllData();
     });
 
-    function switchBrand(brand) {
-      activeBrand = brand;
-      document.querySelectorAll('.brand-pill-btn').forEach(btn => {
-        if (btn.dataset.brand === brand) {
-          btn.classList.add('brand-tab-active');
-        } else {
-          btn.classList.remove('brand-tab-active');
+    function initListeners() {
+      document.getElementById('filter-brand-select').addEventListener('change', (e) => {
+        currentBrand = e.target.value;
+        loadAllData();
+      });
+
+      document.getElementById('filter-platform-select').addEventListener('change', (e) => {
+        currentPlatform = e.target.value;
+        loadAllData();
+      });
+
+      document.getElementById('filter-days-select').addEventListener('change', (e) => {
+        currentDays = parseInt(e.target.value, 10);
+        loadAllData();
+      });
+
+      document.getElementById('refresh-dashboard-btn').addEventListener('click', () => {
+        const icon = document.getElementById('refresh-icon');
+        icon.classList.add('animate-spin');
+        loadAllData().finally(() => {
+          setTimeout(() => icon.classList.remove('animate-spin'), 600);
+        });
+      });
+
+      document.getElementById('trigger-sync-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('trigger-sync-btn');
+        const label = document.getElementById('sync-btn-label');
+        btn.disabled = true;
+        label.textContent = 'Menyinkronkan...';
+        showToast('Memulai sinkronisasi harian multi-token di background...');
+
+        try {
+          const res = await fetch('/api/cron/daily-sync?max_posts=10&background=true', { method: 'POST' });
+          const json = await res.json();
+          showToast('Sinkronisasi berjalan di latar belakang. Memuat data dalam 10 detik...');
+          setTimeout(loadAllData, 10000);
+        } catch (e) {
+          showToast('Gagal memicu sinkronisasi: ' + e.message);
+        } finally {
+          setTimeout(() => {
+            btn.disabled = false;
+            label.textContent = 'Sync Sekarang';
+          }, 5000);
         }
       });
-      loadDashboard();
     }
 
-    function switchPlatform(platform) {
-      activePlatform = platform;
-      document.querySelectorAll('#channel-tabs .channel-btn').forEach(btn => {
-        if (btn.dataset.plat === platform) {
-          btn.classList.add('pill-active');
-        } else {
-          btn.classList.remove('pill-active');
-        }
-      });
-      loadDashboard();
+    function switchMainTab(tab) {
+      const overviewTab = document.getElementById('nav-tab-overview');
+      const detailTab = document.getElementById('nav-tab-detail');
+      const overviewView = document.getElementById('view-overview');
+      const detailView = document.getElementById('view-detail');
+
+      if (tab === 'overview') {
+        overviewTab.classList.add('tab-active');
+        detailTab.classList.remove('tab-active');
+        overviewView.classList.remove('hidden');
+        detailView.classList.add('hidden');
+      } else {
+        detailTab.classList.add('tab-active');
+        overviewTab.classList.remove('tab-active');
+        detailView.classList.remove('hidden');
+        overviewView.classList.add('hidden');
+        // Render or update topic bar chart on tab reveal
+        loadTopicBarChart();
+      }
     }
 
-    async function loadDashboard() {
+    function setGranularity(g) {
+      currentGranularity = g;
+      const dayBtn = document.getElementById('granularity-day-btn');
+      const weekBtn = document.getElementById('granularity-week-btn');
+
+      if (g === 'day') {
+        dayBtn.classList.add('granularity-active');
+        weekBtn.classList.remove('granularity-active');
+      } else {
+        weekBtn.classList.add('granularity-active');
+        dayBtn.classList.remove('granularity-active');
+      }
+      loadBrandStats();
+    }
+
+    async function loadAllData() {
       await Promise.all([
         loadBrandStats(),
         loadTopicBarChart(),
-        loadContentRadar()
+        loadPostsRadar()
       ]);
     }
 
     async function loadBrandStats() {
       try {
-        const res = await fetch(`/api/analytics/brand-stats?brand=${encodeURIComponent(activeBrand)}&platform=${encodeURIComponent(activePlatform)}`);
+        const res = await fetch(`/api/analytics/brand-stats?brand=${encodeURIComponent(currentBrand)}&platform=${encodeURIComponent(currentPlatform)}&limit=50`);
         const json = await res.json();
         if (json.status !== 'success') return;
         const data = json.data;
 
         const kpis = data.kpis || {};
-        document.getElementById('hero-total-views').textContent = Number(kpis.total_views || 0).toLocaleString();
-        document.getElementById('kpi-total-posts').textContent = Number(kpis.total_posts || 0).toLocaleString();
-        document.getElementById('kpi-avg-likes').textContent = Number(kpis.avg_likes || 0).toLocaleString();
-        document.getElementById('kpi-avg-views').textContent = Number(kpis.avg_views || 0).toLocaleString();
-        document.getElementById('kpi-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
-
-        document.getElementById('accent-total-views').textContent = Number(kpis.total_views || 0).toLocaleString();
-        document.getElementById('accent-total-likes').textContent = Number(kpis.total_likes || 0).toLocaleString();
-        document.getElementById('accent-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
+        document.getElementById('stat-total-views').textContent = Number(kpis.total_views || 0).toLocaleString('id-ID');
+        document.getElementById('stat-avg-views').textContent = Number(kpis.avg_views || 0).toLocaleString('id-ID');
+        document.getElementById('stat-total-posts').textContent = Number(kpis.total_posts || 0).toLocaleString('id-ID');
+        document.getElementById('stat-sub-brand-posts').textContent = Number(kpis.total_posts || 0).toLocaleString('id-ID');
+        document.getElementById('stat-total-likes').textContent = Number(kpis.total_likes || 0).toLocaleString('id-ID');
+        document.getElementById('stat-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
 
         const plats = data.platforms || {};
         const ig = plats.instagram || {};
         const th = plats.threads || {};
         const tt = plats.tiktok || {};
 
-        document.getElementById('sub-ig-posts').textContent = `${ig.posts || 0} posts`;
-        document.getElementById('sub-ig-views').textContent = `${Number(ig.views || 0).toLocaleString()} views`;
-        document.getElementById('sub-th-posts').textContent = `${th.posts || 0} posts`;
-        document.getElementById('sub-th-likes').textContent = `${Number(th.likes || 0).toLocaleString()} likes`;
-        document.getElementById('sub-tt-posts').textContent = `${tt.posts || 0} videos`;
-        document.getElementById('sub-tt-views').textContent = `${Number(tt.views || 0).toLocaleString()} views`;
+        document.getElementById('dist-ig-posts').textContent = `${ig.posts || 0} post`;
+        document.getElementById('dist-ig-views').textContent = `${Number(ig.views || 0).toLocaleString('id-ID')} views`;
+        document.getElementById('dist-th-posts').textContent = `${th.posts || 0} post`;
+        document.getElementById('dist-th-likes').textContent = `${Number(th.likes || 0).toLocaleString('id-ID')} likes`;
+        document.getElementById('dist-tt-posts').textContent = `${tt.posts || 0} video`;
+        document.getElementById('dist-tt-views').textContent = `${Number(tt.views || 0).toLocaleString('id-ID')} views`;
+        document.getElementById('dist-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
 
         const brands = data.brands || {};
-        document.getElementById('unit-legal-views').textContent = Number(brands.easylegal?.total_views || 0).toLocaleString();
-        document.getElementById('unit-tax-views').textContent = Number(brands.easytax?.total_views || 0).toLocaleString();
-        document.getElementById('unit-office-views').textContent = Number(brands.easyoffice?.total_views || 0).toLocaleString();
+        document.getElementById('unit-legal-views').textContent = Number(brands.easylegal?.total_views || 0).toLocaleString('id-ID');
+        document.getElementById('unit-tax-views').textContent = Number(brands.easytax?.total_views || 0).toLocaleString('id-ID');
+        document.getElementById('unit-office-views').textContent = Number(brands.easyoffice?.total_views || 0).toLocaleString('id-ID');
 
-        const posts = data.posts || [];
-        if (posts.length > 0) {
-          const topPost = posts[0];
-          document.getElementById('kpi-max-views').textContent = Number(topPost.views || 0).toLocaleString();
-          document.getElementById('kpi-max-likes').textContent = Number(topPost.likes || 0).toLocaleString();
-          document.getElementById('kpi-top-hook').textContent = `"${topPost.hook || topPost.caption || 'Verified Post'}"`;
-        }
-
-        renderWaveChart(posts);
+        renderAreaWaveChart(data.posts || []);
       } catch (err) {
-        console.error('Failed to load brand stats:', err);
+        console.error('Gagal memuat statistik brand:', err);
       }
     }
 
-    function renderWaveChart(posts) {
+    function renderAreaWaveChart(posts) {
       const datesMap = {};
       posts.forEach(p => {
         const d = p.posted_at ? p.posted_at.substring(0, 10) : 'Recent';
-        if (!datesMap[d]) datesMap[d] = 0;
-        datesMap[d] += (p.views || 0);
+        if (!datesMap[d]) datesMap[d] = { views: 0, likes: 0 };
+        datesMap[d].views += (p.views || 0);
+        datesMap[d].likes += (p.likes || 0);
       });
 
       const dates = Object.keys(datesMap).sort();
-      const views = dates.map(d => datesMap[d]);
+      const views = dates.map(d => datesMap[d].views);
+      const likes = dates.map(d => datesMap[d].likes);
 
       if (waveChart) waveChart.destroy();
       const ctx = document.getElementById('engagementWaveCanvas').getContext('2d');
       waveChart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: dates.length ? dates : ['Today'],
-          datasets: [{
-            label: 'Views Trajectory',
-            data: views.length ? views : [0],
-            borderColor: '#e11d48',
-            backgroundColor: 'rgba(225, 29, 72, 0.08)',
-            fill: true,
-            tension: 0.4,
-            borderWidth: 2.5,
-            pointRadius: 2,
-          }]
+          labels: dates.length ? dates : ['Hari Ini'],
+          datasets: [
+            {
+              label: 'Tayangan (Views)',
+              data: views.length ? views : [0],
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              fill: true,
+              tension: 0.35,
+              borderWidth: 2.5,
+              pointRadius: 3,
+            },
+            {
+              label: 'Interaksi (Likes)',
+              data: likes.length ? likes : [0],
+              borderColor: '#10b981',
+              backgroundColor: 'transparent',
+              borderDash: [4, 4],
+              tension: 0.35,
+              borderWidth: 2,
+              pointRadius: 2,
+            }
+          ]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { family: 'General Sans', size: 10 } } },
-            y: { grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8', font: { family: 'General Sans', size: 10 } } }
+            x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+            y: { grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
           },
           plugins: {
-            legend: { display: false }
+            legend: {
+              labels: { color: '#475569', font: { size: 11, weight: '600' } }
+            }
           }
         }
       });
@@ -663,7 +624,7 @@
 
     async function loadTopicBarChart() {
       try {
-        const res = await fetch('/api/analytics/competitor-comparison?days=30');
+        const res = await fetch(`/api/analytics/competitor-comparison?days=${currentDays}`);
         const json = await res.json();
         if (json.status !== 'success') return;
         const dist = json.data.topics_distribution || {};
@@ -672,23 +633,27 @@
         const brandViews = topics.map(t => dist[t].brand_views);
         const compViews = topics.map(t => dist[t].competitor_views);
 
+        const compCount = json.data.competitor_performance?.posts_count || 0;
+        const subCompPosts = document.getElementById('stat-sub-comp-posts');
+        if (subCompPosts) subCompPosts.textContent = compCount;
+
         if (topicBarChart) topicBarChart.destroy();
         const ctx = document.getElementById('topicBarChartCanvas').getContext('2d');
         topicBarChart = new Chart(ctx, {
           type: 'bar',
           data: {
-            labels: topics.length ? topics : ['Legalitas'],
+            labels: topics.length ? topics.map(t => t.toUpperCase()) : ['LEGALITAS PT'],
             datasets: [
               {
-                label: 'EasyCorp Brand',
+                label: 'EasyCorp Brand Views',
                 data: brandViews.length ? brandViews : [0],
-                backgroundColor: '#0f172a',
+                backgroundColor: '#dc2626',
                 borderRadius: 6,
               },
               {
-                label: 'Competitor Share',
+                label: 'Kompetitor Ceruk Serupa Views',
                 data: compViews.length ? compViews : [0],
-                backgroundColor: '#e2e8f0',
+                backgroundColor: '#f59e0b',
                 borderRadius: 6,
               }
             ]
@@ -697,69 +662,69 @@
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-              x: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'General Sans', size: 10 } } },
-              y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { family: 'General Sans', size: 10 } } }
+              x: { grid: { display: false }, ticks: { color: '#475569', font: { size: 11, weight: '600' } } },
+              y: { grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
             },
             plugins: {
-              legend: { labels: { color: '#334155', font: { family: 'General Sans', size: 10, weight: '600' } } }
+              legend: {
+                labels: { color: '#334155', font: { size: 11, weight: '600' } }
+              }
             }
           }
         });
       } catch (err) {
-        console.error('Failed to load topic chart:', err);
+        console.error('Gagal memuat chart topik:', err);
       }
     }
 
-    async function loadContentRadar() {
+    async function loadPostsRadar() {
       const tbody = document.getElementById('posts-table-body');
       try {
-        const res = await fetch(`/api/analytics/leaderboard?limit=15&days=30${activePlatform !== 'all' ? `&platform=${activePlatform}` : ''}`);
+        const platParam = currentPlatform !== 'all' ? `&platform=${currentPlatform}` : '';
+        const res = await fetch(`/api/analytics/leaderboard?limit=15&days=${currentDays}${platParam}`);
         const json = await res.json();
 
         if (json.status !== 'success' || !json.data.length) {
-          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">No content records found for this filter.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-gray-400">Belum ada data postingan. Jalankan tombol Sync Sekarang untuk menarik konten terbaru.</td></tr>';
           return;
         }
 
-        document.getElementById('radar-count-label').textContent = `${json.data.length} verified records`;
+        document.getElementById('radar-count-label').textContent = `${json.data.length} Postingan Terverifikasi`;
 
         tbody.innerHTML = json.data.map(p => {
           const platBadge = p.platform === 'instagram' ? 'badge-ig' : (p.platform === 'tiktok' ? 'badge-tt' : 'badge-th');
+          const isOwn = p.is_own_brand;
+          const formattedDate = p.posted_at ? p.posted_at.substring(0, 10) : '-';
           const hook = p.hook || p.caption || '-';
           const permalink = p.permalink || '#';
 
           return `
-            <tr class="hover:bg-slate-50/80 transition-colors">
+            <tr class="hover:bg-gray-50/80 transition-colors">
               <td class="py-3 px-4">
                 <span class="${platBadge} px-2 py-0.5 rounded text-[10px] font-bold uppercase">${p.platform}</span>
               </td>
-              <td class="py-3 px-4 font-bold text-slate-900">@${p.username}</td>
-              <td class="py-3 px-4 max-w-sm text-slate-600 font-medium">"${hook}"</td>
-              <td class="py-3 px-4 text-right font-display font-bold text-slate-900">${Number(p.views || 0).toLocaleString()}</td>
-              <td class="py-3 px-4 text-right font-medium text-slate-500">${Number(p.likes || 0).toLocaleString()}</td>
-              <td class="py-3 px-4 text-right font-bold text-emerald-600">${p.engagement_rate}%</td>
+              <td class="py-3 px-4 font-bold text-gray-900">@${p.username}</td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isOwn ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}">
+                  ${isOwn ? 'EasyCorp' : 'Kompetitor'}
+                </span>
+              </td>
+              <td class="py-3 px-4 max-w-sm text-gray-700 font-medium leading-snug">
+                "${hook}"
+              </td>
+              <td class="py-3 px-4 text-right font-mono font-bold text-gray-900">${Number(p.views || 0).toLocaleString('id-ID')}</td>
+              <td class="py-3 px-4 text-right font-mono text-gray-600">${Number(p.likes || 0).toLocaleString('id-ID')}</td>
+              <td class="py-3 px-4 text-right font-mono font-bold text-emerald-600">${p.engagement_rate}%</td>
               <td class="py-3 px-4 text-center">
-                <a href="${permalink}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 font-bold text-xs">
-                  Inspect ↗
+                <a href="${permalink}" target="_blank" rel="noopener noreferrer" class="text-red-600 hover:text-red-700 font-bold text-xs">
+                  Lihat ↗
                 </a>
               </td>
             </tr>
           `;
         }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-500">Failed to load content radar: ${err.message}</td></tr>`;
-      }
-    }
-
-    function initGSAP() {
-      if (typeof gsap !== 'undefined') {
-        gsap.from('.shadow-card', {
-          opacity: 0,
-          y: 15,
-          duration: 0.5,
-          stagger: 0.06,
-          ease: 'power2.out'
-        });
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-red-500">Gagal memuat radar konten: ${err.message}</td></tr>`;
       }
     }
 
