@@ -760,7 +760,11 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
                         except Exception:
                             pass
 
-        final_reply = full_content.strip() or reasoning.strip()
+        # Some router responses leak an empty/stray <think>...</think> marker into the
+        # content delta instead of routing it through reasoning_content — strip it so it
+        # never surfaces as literal text in the chat UI.
+        visible_content = re.sub(r"<think>.*?</think>", "", full_content, flags=re.DOTALL).strip()
+        final_reply = visible_content or full_content.strip() or reasoning.strip()
         if not final_reply:
             return self._local_fallback_handler(db, user_message)
 
