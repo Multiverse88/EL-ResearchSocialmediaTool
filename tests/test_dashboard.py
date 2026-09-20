@@ -25,10 +25,10 @@ class TestAnalyticsDashboard(unittest.TestCase):
         self.assertIn("<!DOCTYPE html>", html)
         self.assertIn("EasyCorp Social Media Intelligence", html)
         self.assertIn("chart.js", html.lower())
-        self.assertIn("timeSeriesTrajectoryCanvas", html)
-        self.assertIn("topicRadarCanvas", html)
-        self.assertIn("content-table-body", html)
-        self.assertIn("header-sync-btn", html)
+        self.assertIn("engagementWaveCanvas", html)
+        self.assertIn("topicBarChartCanvas", html)
+        self.assertIn("posts-table-body", html)
+        self.assertIn("trigger-sync-btn", html)
 
     def test_get_analytics_endpoint(self):
         client = TestClient(app)
@@ -36,8 +36,7 @@ class TestAnalyticsDashboard(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/html", resp.headers.get("content-type", ""))
         self.assertIn("EasyCorp Social Media Intelligence", resp.text)
-        self.assertIn("timeSeriesTrajectoryCanvas", resp.text)
-
+        self.assertIn("engagementWaveCanvas", resp.text)
 
 if __name__ == "__main__":
     unittest.main()
