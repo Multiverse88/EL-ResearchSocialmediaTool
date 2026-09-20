@@ -670,6 +670,28 @@
 
         if (topicBarChart) topicBarChart.destroy();
         const ctx = document.getElementById('topicBarChartCanvas').getContext('2d');
+
+        const valueLabelPlugin = {
+          id: 'valueLabels',
+          afterDatasetsDraw(chart) {
+            const { ctx: c } = chart;
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+              const meta = chart.getDatasetMeta(datasetIndex);
+              if (meta.hidden) return;
+              meta.data.forEach((bar, index) => {
+                const value = dataset.data[index];
+                if (value === undefined || value === null) return;
+                c.save();
+                c.fillStyle = dataset.backgroundColor;
+                c.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+                c.textAlign = 'center';
+                c.fillText(Number(value).toLocaleString('id-ID'), bar.x, bar.y - 6);
+                c.restore();
+              });
+            });
+          },
+        };
+
         topicBarChart = new Chart(ctx, {
           type: 'bar',
           data: {
@@ -680,18 +702,24 @@
                 data: brandEngagement.length ? brandEngagement : [0, 0, 0],
                 backgroundColor: '#dc2626',
                 borderRadius: 6,
+                minBarLength: 6,
               },
               {
                 label: 'Interaksi Kompetitor',
                 data: compEngagement.length ? compEngagement : [0, 0, 0],
                 backgroundColor: '#f59e0b',
                 borderRadius: 6,
+                minBarLength: 6,
               }
             ]
           },
+          plugins: [valueLabelPlugin],
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+              padding: { top: 20 }
+            },
             scales: {
               x: { grid: { display: false }, ticks: { color: '#475569', font: { size: 11, weight: '600' } } },
               y: { grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
