@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -544,3 +545,235 @@ def get_brand_overview_stats(
         "brands": brands_data,
         "posts": posts_list,
     }
+
+
+def _safe_parse_dt(iso_str: Optional[str]) -> Optional[datetime]:
+    """Best-effort ISO-8601 parse; returns None (never raises) for malformed/missing values."""
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
+def get_content_format_breakdown(db: Database, days: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Returns post count and average engagement per content format (feed/reel/etc), split
+    into brand vs competitor. Not date-windowed by default (own-brand posts are too few
+    to split meaningfully across formats within a rolling 30-day window — see the
+    niche-topic chart fix for the same lesson).
+    """
+    where = "WHERE p.content_type != ''"
+    params: List[Any] = []
+    if days:
+        where += " AND p.posted_at >= ?"
+        params.append(_get_cutoff_iso(days))
+    sql = f"""
+        SELECT a.is_own_brand, p.content_type, COUNT(*),
+               ROUND(COALESCE(AVG(p.likes), 0), 1),
+               ROUND(COALESCE(AVG(p.comments), 0), 1),
+               ROUND(COALESCE(AVG(p.views), 0), 1)
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {where}
+        GROUP BY a.is_own_brand, p.content_type
+        ORDER BY p.content_type
+    """
+    cursor = db.conn.execute(sql, params)
+    result: Dict[str, Dict[str, Any]] = {"brand": {}, "competitor": {}}
+    for is_own, content_type, count, avg_likes, avg_comments, avg_views in cursor.fetchall():
+        key = "brand" if is_own == 1 else "competitor"
+        label = content_type.capitalize() if content_type else "Lainnya"
+        result[key][label] = {
+            "post_count": count,
+            "avg_likes": avg_likes,
+            "avg_comments": avg_comments,
+            "avg_views": avg_views,
+        }
+    return result
+
+
+def get_posting_cadence(db: Database) -> List[Dict[str, Any]]:
+    """Returns posting frequency and recency per own-brand account, so gaps/slowdowns
+    in content output are visible instead of buried in raw post lists."""
+    sql = """
+        SELECT a.id, a.platform, a.username, COUNT(p.id), MAX(p.posted_at), MIN(p.posted_at)
+        FROM accounts a
+        LEFT JOIN posts p ON p.account_id = a.id
+        WHERE a.is_own_brand = 1
+        GROUP BY a.id
+        ORDER BY a.username ASC, a.platform ASC
+    """
+    cursor = db.conn.execute(sql)
+    now = datetime.now(timezone.utc)
+    results = []
+    for account_id, platform, username, post_count, last_posted, first_posted in cursor.fetchall():
+        last_dt = _safe_parse_dt(last_posted)
+        first_dt = _safe_parse_dt(first_posted)
+        if not post_count or not last_dt:
+            results.append({
+                "account_id": account_id, "platform": platform, "username": username,
+                "post_count": 0, "posts_per_week": 0.0, "days_since_last_post": None,
+                "status": "Belum ada data",
+            })
+            continue
+        days_since_last = (now - last_dt).days
+        span_days = max((last_dt - first_dt).days, 1) if first_dt else 1
+        posts_per_week = round(post_count / (span_days / 7.0), 1)
+        if days_since_last <= 3:
+            status = "Aktif"
+        elif days_since_last <= 14:
+            status = "Mulai Melambat"
+        else:
+            status = "Perlu Perhatian"
+        results.append({
+            "account_id": account_id, "platform": platform, "username": username,
+            "post_count": post_count, "posts_per_week": posts_per_week,
+            "days_since_last_post": days_since_last, "status": status,
+        })
+    return results
+
+
+DAY_LABELS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+HOUR_BUCKET_LABELS = ["00-04", "04-08", "08-12", "12-16", "16-20", "20-24"]
+
+
+def get_best_posting_time(db: Database, is_own_brand: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Returns average engagement per (day-of-week, 4-hour bucket), built from posted_at —
+    a directional 'when does content land best' signal, not a guarantee given sample size."""
+    where = ""
+    params: List[Any] = []
+    if is_own_brand is not None:
+        where = "WHERE a.is_own_brand = ?"
+        params.append(is_own_brand)
+    sql = f"""
+        SELECT p.posted_at, p.likes, p.comments
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {where}
+    """
+    cursor = db.conn.execute(sql, params)
+    buckets: Dict[Any, List[int]] = {}
+    for posted_at, likes, comments in cursor.fetchall():
+        dt = _safe_parse_dt(posted_at)
+        if not dt:
+            continue
+        key = (dt.weekday(), dt.hour // 4)
+        entry = buckets.setdefault(key, [0, 0])
+        entry[0] += (likes or 0) + (comments or 0)
+        entry[1] += 1
+    result = []
+    for dow in range(7):
+        for hb in range(6):
+            total, count = buckets.get((dow, hb), [0, 0])
+            result.append({
+                "day": DAY_LABELS[dow],
+                "hour_range": HOUR_BUCKET_LABELS[hb],
+                "avg_engagement": round(total / count, 1) if count else 0,
+                "post_count": count,
+            })
+    return result
+
+
+_HASHTAG_RE = re.compile(r"#(\w+)")
+
+
+def get_hashtag_performance(
+    db: Database, min_posts: int = 2, limit: int = 15, is_own_brand: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Ranks hashtags actually used in captions by average engagement. Hashtags used only
+    once are dropped (min_posts) — a single lucky/unlucky post isn't a pattern."""
+    where = ""
+    params: List[Any] = []
+    if is_own_brand is not None:
+        where = "WHERE a.is_own_brand = ?"
+        params.append(is_own_brand)
+    sql = f"""
+        SELECT p.caption, p.likes, p.comments
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {where}
+    """
+    cursor = db.conn.execute(sql, params)
+    stats: Dict[str, List[int]] = {}
+    for caption, likes, comments in cursor.fetchall():
+        if not caption:
+            continue
+        tags = {t.lower() for t in _HASHTAG_RE.findall(caption)}
+        engagement = (likes or 0) + (comments or 0)
+        for tag in tags:
+            entry = stats.setdefault(tag, [0, 0])
+            entry[0] += engagement
+            entry[1] += 1
+    rows = [
+        {"hashtag": f"#{tag}", "post_count": count, "avg_engagement": round(total / count, 1)}
+        for tag, (total, count) in stats.items() if count >= min_posts
+    ]
+    rows.sort(key=lambda r: r["avg_engagement"], reverse=True)
+    return rows[:limit]
+
+
+def get_competitor_leaderboard(db: Database, days: Optional[int] = None, limit: int = 10) -> List[Dict[str, Any]]:
+    """Ranks INDIVIDUAL competitor accounts by total engagement, instead of collapsing
+    every competitor into one aggregate number — answers 'which competitor', not just
+    'competitors in general'."""
+    where = "WHERE a.is_own_brand = 0"
+    params: List[Any] = []
+    if days:
+        where += " AND p.posted_at >= ?"
+        params.append(_get_cutoff_iso(days))
+    sql = f"""
+        SELECT a.username, a.platform, COUNT(*),
+               COALESCE(SUM(p.likes), 0) + COALESCE(SUM(p.comments), 0),
+               ROUND(COALESCE(AVG(p.likes), 0), 1)
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {where}
+        GROUP BY a.username, a.platform
+        ORDER BY (COALESCE(SUM(p.likes), 0) + COALESCE(SUM(p.comments), 0)) DESC
+        LIMIT ?
+    """
+    params.append(limit)
+    cursor = db.conn.execute(sql, params)
+    return [
+        {
+            "username": r[0], "platform": r[1], "post_count": r[2],
+            "total_engagement": r[3], "avg_likes": r[4],
+        }
+        for r in cursor.fetchall()
+    ]
+
+
+def get_data_health(db: Database) -> List[Dict[str, Any]]:
+    """Per own-brand account: how much of its stored data is actually complete (views
+    field populated) and when it last successfully synced — surfaces scraping gaps
+    (e.g. Bright Data not returning view counts for a given account) directly, instead
+    of only showing up as an unexplained '0' somewhere else in the dashboard."""
+    sql = """
+        SELECT a.id, a.platform, a.username, COUNT(p.id),
+               SUM(CASE WHEN p.views IS NOT NULL THEN 1 ELSE 0 END),
+               MAX(p.scraped_at)
+        FROM accounts a
+        LEFT JOIN posts p ON p.account_id = a.id
+        WHERE a.is_own_brand = 1
+        GROUP BY a.id
+        ORDER BY a.username ASC, a.platform ASC
+    """
+    cursor = db.conn.execute(sql)
+    results = []
+    for account_id, platform, username, post_count, views_present, last_scraped in cursor.fetchall():
+        post_count = post_count or 0
+        completeness = round((views_present / post_count) * 100) if post_count else 0
+        results.append({
+            "account_id": account_id,
+            "platform": platform,
+            "username": username,
+            "post_count": post_count,
+            "views_data_completeness_pct": completeness,
+            "last_scraped_at": last_scraped,
+        })
+    return results

@@ -416,6 +416,124 @@
         </div>
       </div>
 
+      <!-- Section: Format Konten (Reel vs Feed) -->
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div>
+          <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+            Format Konten Mana yang Menang?
+          </h2>
+          <p class="text-xs text-gray-500">Rata-rata like &amp; komentar per format, EasyCorp vs kompetitor (semua waktu)</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left text-gray-400 uppercase text-[10px] border-b border-gray-100">
+                <th class="py-2 pr-3">Format</th>
+                <th class="py-2 pr-3">Post (Kita)</th>
+                <th class="py-2 pr-3">Rata-rata Like (Kita)</th>
+                <th class="py-2 pr-3">Rata-rata Komentar (Kita)</th>
+                <th class="py-2 pr-3">Post (Kompetitor)</th>
+                <th class="py-2 pr-3">Rata-rata Like (Kompetitor)</th>
+              </tr>
+            </thead>
+            <tbody id="content-format-body">
+              <tr><td colspan="6" class="py-4 text-center text-gray-400">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section: Konsistensi Posting -->
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div>
+          <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            Konsistensi Posting
+          </h2>
+          <p class="text-xs text-gray-500">Seberapa rutin tiap akun EasyCorp posting, dan kapan terakhir aktif</p>
+        </div>
+        <div id="posting-cadence-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="text-center text-gray-400 text-xs py-4 sm:col-span-3">Memuat data...</div>
+        </div>
+      </div>
+
+      <!-- Section: Jam Terbaik Posting -->
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div>
+          <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Jam &amp; Hari Terbaik untuk Posting
+          </h2>
+          <p class="text-xs text-gray-500">Rata-rata interaksi berdasarkan jam &amp; hari post (semua akun EasyCorp) — makin gelap makin ramai. Sampel masih terbatas, jadikan indikasi awal.</p>
+        </div>
+        <div id="best-time-heatmap" class="overflow-x-auto">
+          <div class="text-center text-gray-400 text-xs py-4">Memuat data...</div>
+        </div>
+      </div>
+
+      <!-- Section: Hashtag Terbaik & Papan Peringkat Kompetitor -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+          <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <svg class="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+              Hashtag Paling Nendang
+            </h2>
+            <p class="text-xs text-gray-500">Hashtag EasyCorp dengan rata-rata interaksi tertinggi (dipakai minimal 2x)</p>
+          </div>
+          <div id="hashtag-leaderboard" class="space-y-1.5">
+            <div class="text-center text-gray-400 text-xs py-4">Memuat data...</div>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+          <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+              Papan Peringkat Kompetitor
+            </h2>
+            <p class="text-xs text-gray-500">Kompetitor individual berdasarkan total interaksi (semua waktu)</p>
+          </div>
+          <div id="competitor-leaderboard" class="space-y-1.5">
+            <div class="text-center text-gray-400 text-xs py-4">Memuat data...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Kesehatan Data -->
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <svg class="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Kesehatan Data Scraping
+            </h2>
+            <p class="text-xs text-gray-500">Kelengkapan data per akun EasyCorp — biar jelas kenapa suatu angka kosong, bukan cuma "0" tanpa penjelasan</p>
+          </div>
+          <a href="/logs" class="text-xs font-semibold text-red-600 hover:text-red-700 flex items-center gap-1 shrink-0">
+            Lihat Log Scraping
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+          </a>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left text-gray-400 uppercase text-[10px] border-b border-gray-100">
+                <th class="py-2 pr-3">Akun</th>
+                <th class="py-2 pr-3">Platform</th>
+                <th class="py-2 pr-3">Total Post</th>
+                <th class="py-2 pr-3">Kelengkapan Data Views</th>
+                <th class="py-2 pr-3">Terakhir Sinkron</th>
+              </tr>
+            </thead>
+            <tbody id="data-health-body">
+              <tr><td colspan="5" class="py-4 text-center text-gray-400">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
 
   </main>
@@ -523,7 +641,13 @@
       await Promise.all([
         loadBrandStats(),
         loadTopicBarChart(),
-        loadPostsRadar()
+        loadPostsRadar(),
+        loadContentFormatBreakdown(),
+        loadPostingCadence(),
+        loadBestPostingTime(),
+        loadHashtagLeaderboard(),
+        loadCompetitorLeaderboard(),
+        loadDataHealth(),
       ]);
     }
 
@@ -796,6 +920,204 @@
         }).join('');
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-red-500">Gagal memuat radar konten: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function loadContentFormatBreakdown() {
+      const tbody = document.getElementById('content-format-body');
+      try {
+        const res = await fetch('/api/analytics/content-format');
+        const json = await res.json();
+        if (json.status !== 'success') return;
+        const { brand, competitor } = json.data;
+        const formats = Array.from(new Set([...Object.keys(brand), ...Object.keys(competitor)]));
+        if (formats.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-400">Belum ada post dengan format tercatat.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = formats.map((fmt) => {
+          const b = brand[fmt] || { post_count: 0, avg_likes: 0, avg_comments: 0 };
+          const c = competitor[fmt] || { post_count: 0, avg_likes: 0 };
+          return `
+            <tr class="border-b border-gray-50 last:border-0">
+              <td class="py-2 pr-3 font-bold text-gray-800">${fmt}</td>
+              <td class="py-2 pr-3">${b.post_count}</td>
+              <td class="py-2 pr-3 font-mono">${Number(b.avg_likes).toLocaleString('id-ID')}</td>
+              <td class="py-2 pr-3 font-mono">${Number(b.avg_comments).toLocaleString('id-ID')}</td>
+              <td class="py-2 pr-3">${c.post_count}</td>
+              <td class="py-2 pr-3 font-mono">${Number(c.avg_likes).toLocaleString('id-ID')}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-500">Gagal memuat: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function loadPostingCadence() {
+      const container = document.getElementById('posting-cadence-cards');
+      try {
+        const res = await fetch('/api/analytics/posting-cadence');
+        const json = await res.json();
+        if (json.status !== 'success' || !json.data.length) {
+          container.innerHTML = '<div class="text-center text-gray-400 text-xs py-4 sm:col-span-3">Belum ada akun EasyCorp dengan data post.</div>';
+          return;
+        }
+        const statusColor = {
+          'Aktif': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          'Mulai Melambat': 'bg-amber-50 text-amber-700 border-amber-200',
+          'Perlu Perhatian': 'bg-red-50 text-red-700 border-red-200',
+          'Belum ada data': 'bg-gray-50 text-gray-500 border-gray-200',
+        };
+        container.innerHTML = json.data.map((a) => {
+          const lastPostText = a.days_since_last_post === null ? 'Belum pernah'
+            : a.days_since_last_post === 0 ? 'Hari ini'
+            : `${a.days_since_last_post} hari lalu`;
+          const cls = statusColor[a.status] || statusColor['Belum ada data'];
+          return `
+            <div class="border border-gray-100 rounded-xl p-3.5">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-xs font-bold text-gray-800">@${a.username}</span>
+                <span class="text-[9px] font-bold uppercase text-gray-400">${a.platform}</span>
+              </div>
+              <div class="text-lg font-bold font-mono text-gray-900">${a.posts_per_week}<span class="text-xs font-normal text-gray-400">/minggu</span></div>
+              <div class="text-[11px] text-gray-500 mt-1">Terakhir posting: ${lastPostText}</div>
+              <span class="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-bold border ${cls}">${a.status}</span>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="text-center text-red-500 text-xs py-4 sm:col-span-3">Gagal memuat: ${err.message}</div>`;
+      }
+    }
+
+    async function loadBestPostingTime() {
+      const container = document.getElementById('best-time-heatmap');
+      try {
+        const res = await fetch('/api/analytics/best-time?is_own_brand=1');
+        const json = await res.json();
+        if (json.status !== 'success') return;
+        const cells = json.data;
+        const totalPosts = cells.reduce((s, c) => s + c.post_count, 0);
+        if (totalPosts === 0) {
+          container.innerHTML = '<div class="text-center text-gray-400 text-xs py-4">Belum ada post EasyCorp dengan tanggal yang bisa dianalisis.</div>';
+          return;
+        }
+        const maxEng = Math.max(...cells.map((c) => c.avg_engagement), 1);
+        const days = [...new Set(cells.map((c) => c.day))];
+        const hours = [...new Set(cells.map((c) => c.hour_range))];
+        let html = '<table class="w-full text-[10px] border-separate" style="border-spacing:3px"><thead><tr><th></th>';
+        hours.forEach((h) => { html += `<th class="text-gray-400 font-semibold pb-1">${h}</th>`; });
+        html += '</tr></thead><tbody>';
+        days.forEach((day) => {
+          html += `<tr><td class="text-gray-500 font-semibold pr-2 text-right whitespace-nowrap">${day}</td>`;
+          hours.forEach((h) => {
+            const cell = cells.find((c) => c.day === day && c.hour_range === h);
+            const intensity = cell && cell.post_count > 0 ? Math.max(0.15, cell.avg_engagement / maxEng) : 0;
+            const bg = intensity > 0 ? `rgba(220,38,38,${intensity.toFixed(2)})` : '#f3f4f6';
+            const textStyle = intensity > 0.5 ? 'color:#fff' : 'color:#9ca3af';
+            const title = cell && cell.post_count > 0 ? `${cell.post_count} post, rata-rata ${cell.avg_engagement} interaksi` : 'Tidak ada data';
+            html += `<td class="rounded-md text-center py-2.5" style="background:${bg};${textStyle}" title="${title}">${cell && cell.post_count > 0 ? cell.post_count : ''}</td>`;
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = `<div class="text-center text-red-500 text-xs py-4">Gagal memuat: ${err.message}</div>`;
+      }
+    }
+
+    async function loadHashtagLeaderboard() {
+      const container = document.getElementById('hashtag-leaderboard');
+      try {
+        const res = await fetch('/api/analytics/hashtag-performance?is_own_brand=1&limit=8');
+        const json = await res.json();
+        if (json.status !== 'success' || !json.data.length) {
+          container.innerHTML = '<div class="text-center text-gray-400 text-xs py-4">Belum ada hashtag yang dipakai berulang di caption EasyCorp.</div>';
+          return;
+        }
+        container.innerHTML = json.data.map((h, idx) => `
+          <div class="flex items-center justify-between py-1.5 ${idx > 0 ? 'border-t border-gray-50' : ''}">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-[10px] font-bold text-gray-300 w-4 shrink-0">${idx + 1}</span>
+              <span class="text-xs font-bold text-indigo-600 truncate">${h.hashtag}</span>
+              <span class="text-[10px] text-gray-400 shrink-0">${h.post_count} post</span>
+            </div>
+            <span class="text-xs font-mono font-bold text-gray-800 shrink-0">${Number(h.avg_engagement).toLocaleString('id-ID')}</span>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="text-center text-red-500 text-xs py-4">Gagal memuat: ${err.message}</div>`;
+      }
+    }
+
+    async function loadCompetitorLeaderboard() {
+      const container = document.getElementById('competitor-leaderboard');
+      try {
+        const res = await fetch('/api/analytics/competitor-leaderboard?days=3650&limit=8');
+        const json = await res.json();
+        if (json.status !== 'success' || !json.data.length) {
+          container.innerHTML = '<div class="text-center text-gray-400 text-xs py-4">Belum ada data kompetitor.</div>';
+          return;
+        }
+        container.innerHTML = json.data.map((c, idx) => `
+          <div class="flex items-center justify-between py-1.5 ${idx > 0 ? 'border-t border-gray-50' : ''}">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-[10px] font-bold text-gray-300 w-4 shrink-0">${idx + 1}</span>
+              <span class="text-xs font-bold text-gray-800 truncate">@${c.username}</span>
+              <span class="text-[9px] font-bold uppercase text-gray-400 shrink-0">${c.platform}</span>
+              <span class="text-[10px] text-gray-400 shrink-0">${c.post_count} post</span>
+            </div>
+            <span class="text-xs font-mono font-bold text-amber-600 shrink-0">${Number(c.total_engagement).toLocaleString('id-ID')}</span>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="text-center text-red-500 text-xs py-4">Gagal memuat: ${err.message}</div>`;
+      }
+    }
+
+    function timeAgoLabel(isoStr) {
+      const diffMs = Date.now() - new Date(isoStr).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return 'Baru saja';
+      if (mins < 60) return `${mins} menit lalu`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours} jam lalu`;
+      const days = Math.floor(hours / 24);
+      return `${days} hari lalu`;
+    }
+
+    async function loadDataHealth() {
+      const tbody = document.getElementById('data-health-body');
+      try {
+        const res = await fetch('/api/analytics/data-health');
+        const json = await res.json();
+        if (json.status !== 'success' || !json.data.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-400">Belum ada akun EasyCorp terdaftar.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = json.data.map((a) => {
+          const pct = a.views_data_completeness_pct;
+          const barColor = pct >= 70 ? 'bg-emerald-500' : pct >= 30 ? 'bg-amber-500' : 'bg-red-400';
+          const lastSync = a.last_scraped_at ? timeAgoLabel(a.last_scraped_at) : 'Belum pernah';
+          return `
+            <tr class="border-b border-gray-50 last:border-0">
+              <td class="py-2 pr-3 font-bold text-gray-800">@${a.username}</td>
+              <td class="py-2 pr-3 text-gray-500 uppercase text-[10px] font-bold">${a.platform}</td>
+              <td class="py-2 pr-3">${a.post_count}</td>
+              <td class="py-2 pr-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-20 h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full ${barColor}" style="width:${pct}%"></div></div>
+                  <span class="text-[10px] text-gray-500">${pct}%</span>
+                </div>
+              </td>
+              <td class="py-2 pr-3 text-gray-500">${lastSync}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-red-500">Gagal memuat: ${err.message}</td></tr>`;
       }
     }
 

@@ -127,6 +127,7 @@ class ScrapeLog:
     status: str  # "success" | "failed"
     error_message: Optional[str]
     run_at: str
+    target: str = ""  # username or topic/keyword this scrape run was about, "" for batch/summary runs
 
     @classmethod
     def create(
@@ -136,6 +137,7 @@ class ScrapeLog:
         error_message: Optional[str] = None,
         run_at: Optional[str] = None,
         log_id: Optional[str] = None,
+        target: str = "",
     ) -> ScrapeLog:
         return cls(
             id=log_id or str(uuid.uuid4()),
@@ -143,6 +145,7 @@ class ScrapeLog:
             status=status.lower(),
             error_message=error_message,
             run_at=run_at or datetime.now(timezone.utc).isoformat(),
+            target=target,
         )
 
     def to_dict(self) -> dict:

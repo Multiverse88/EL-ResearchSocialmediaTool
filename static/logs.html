@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Scraping - EasyCorp Social Media Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { height: 100%; margin: 0; }
+    body { background-color: #f8fafc; color: #1c1917; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #d6d3c9; border-radius: 9999px; }
+  </style>
+</head>
+<body class="antialiased">
+
+  <header class="bg-white border-b border-gray-100 sticky top-0 z-10">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center font-extrabold text-white text-xs shrink-0">EC</div>
+        <div>
+          <h1 class="text-sm font-bold text-gray-900">Log Scraping</h1>
+          <p class="text-[11px] text-gray-400">Riwayat setiap proses pengambilan data — akun/topik, status, dan detail error</p>
+        </div>
+      </div>
+      <a href="/analytics" class="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-xs font-semibold text-gray-500 hover:text-gray-900 border border-gray-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        Kembali ke Dashboard
+      </a>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-6 space-y-4">
+
+    <!-- Summary cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3" id="log-summary-cards">
+      <div class="bg-white p-4 rounded-2xl border border-gray-100">
+        <div class="text-[11px] text-gray-400 font-semibold uppercase">Total Log</div>
+        <div class="text-xl font-bold font-mono text-gray-900 mt-1" id="summary-total">-</div>
+      </div>
+      <div class="bg-white p-4 rounded-2xl border border-gray-100">
+        <div class="text-[11px] text-gray-400 font-semibold uppercase">Berhasil</div>
+        <div class="text-xl font-bold font-mono text-emerald-600 mt-1" id="summary-success">-</div>
+      </div>
+      <div class="bg-white p-4 rounded-2xl border border-gray-100">
+        <div class="text-[11px] text-gray-400 font-semibold uppercase">Gagal</div>
+        <div class="text-xl font-bold font-mono text-red-600 mt-1" id="summary-failed">-</div>
+      </div>
+      <div class="bg-white p-4 rounded-2xl border border-gray-100">
+        <div class="text-[11px] text-gray-400 font-semibold uppercase">Log Terakhir</div>
+        <div class="text-sm font-bold text-gray-900 mt-1.5" id="summary-last-run">-</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white p-4 rounded-2xl border border-gray-100 flex flex-wrap items-center gap-3">
+      <select id="filter-platform" class="text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+        <option value="all">Semua Platform</option>
+        <option value="instagram">Instagram</option>
+        <option value="tiktok">TikTok</option>
+        <option value="threads">Threads</option>
+        <option value="daily_sync">Daily Sync (ringkasan)</option>
+      </select>
+      <select id="filter-status" class="text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+        <option value="all">Semua Status</option>
+        <option value="success">Berhasil</option>
+        <option value="failed">Gagal</option>
+      </select>
+      <button id="refresh-btn" class="ml-auto flex items-center gap-2 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        Refresh
+      </button>
+    </div>
+
+    <!-- Log table -->
+    <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left text-gray-400 uppercase text-[10px] border-b border-gray-100 bg-gray-50/60">
+            <th class="py-3 px-4">Waktu</th>
+            <th class="py-3 px-4">Platform</th>
+            <th class="py-3 px-4">Target</th>
+            <th class="py-3 px-4">Status</th>
+            <th class="py-3 px-4">Detail</th>
+          </tr>
+        </thead>
+        <tbody id="log-table-body">
+          <tr><td colspan="5" class="py-8 text-center text-gray-400">Memuat log...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between text-xs text-gray-500">
+      <span id="pagination-label">-</span>
+      <div class="flex gap-2">
+        <button id="prev-page-btn" class="px-3 py-1.5 rounded-lg border border-gray-200 font-semibold hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>← Sebelumnya</button>
+        <button id="next-page-btn" class="px-3 py-1.5 rounded-lg border border-gray-200 font-semibold hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>Berikutnya →</button>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const PAGE_SIZE = 25;
+    let currentOffset = 0;
+    let currentTotal = 0;
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function timeAgoLabel(isoStr) {
+      const diffMs = Date.now() - new Date(isoStr).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return 'Baru saja';
+      if (mins < 60) return `${mins} menit lalu`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours} jam lalu`;
+      const days = Math.floor(hours / 24);
+      return `${days} hari lalu`;
+    }
+
+    function formatDateTime(isoStr) {
+      try {
+        return new Date(isoStr).toLocaleString('id-ID', {
+          timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
+      } catch (e) {
+        return isoStr;
+      }
+    }
+
+    const PLATFORM_BADGE = {
+      instagram: 'bg-pink-50 text-pink-700 border-pink-200',
+      tiktok: 'bg-gray-100 text-gray-700 border-gray-300',
+      threads: 'bg-gray-800 text-white border-gray-800',
+      daily_sync: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    };
+
+    async function loadSummary() {
+      try {
+        const [totalRes, successRes, failedRes] = await Promise.all([
+          fetch('/scrape/logs?limit=1&status=all&platform=all'),
+          fetch('/scrape/logs?limit=1&status=success&platform=all'),
+          fetch('/scrape/logs?limit=1&status=failed&platform=all'),
+        ]);
+        const [totalJson, successJson, failedJson] = await Promise.all([totalRes.json(), successRes.json(), failedRes.json()]);
+        document.getElementById('summary-total').textContent = Number(totalJson.total || 0).toLocaleString('id-ID');
+        document.getElementById('summary-success').textContent = Number(successJson.total || 0).toLocaleString('id-ID');
+        document.getElementById('summary-failed').textContent = Number(failedJson.total || 0).toLocaleString('id-ID');
+        if (totalJson.data && totalJson.data.length > 0) {
+          document.getElementById('summary-last-run').textContent = timeAgoLabel(totalJson.data[0].run_at);
+        } else {
+          document.getElementById('summary-last-run').textContent = 'Belum ada';
+        }
+      } catch (err) {
+        console.error('Gagal memuat ringkasan log:', err);
+      }
+    }
+
+    async function loadLogs() {
+      const tbody = document.getElementById('log-table-body');
+      const platform = document.getElementById('filter-platform').value;
+      const status = document.getElementById('filter-status').value;
+      tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-gray-400">Memuat log...</td></tr>';
+      try {
+        const params = new URLSearchParams({
+          limit: PAGE_SIZE, offset: currentOffset, platform, status,
+        });
+        const res = await fetch(`/scrape/logs?${params.toString()}`);
+        const json = await res.json();
+        if (json.status !== 'success') {
+          tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-red-500">Gagal memuat log.</td></tr>';
+          return;
+        }
+        currentTotal = json.total || 0;
+        if (json.data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-gray-400">Tidak ada log yang cocok dengan filter ini.</td></tr>';
+        } else {
+          tbody.innerHTML = json.data.map((log) => {
+            const badgeCls = PLATFORM_BADGE[log.platform] || 'bg-gray-50 text-gray-600 border-gray-200';
+            const statusCls = log.status === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-red-50 text-red-700 border-red-200';
+            const isSummaryRow = log.platform === 'daily_sync';
+            const target = log.target
+              ? (isSummaryRow ? escapeHtml(log.target) : `@${escapeHtml(log.target)}`)
+              : '<span class="text-gray-300">-</span>';
+            const detail = log.error_message
+              ? `<span class="text-red-600">${escapeHtml(log.error_message)}</span>`
+              : '<span class="text-gray-400">Sukses tanpa catatan tambahan</span>';
+            return `
+              <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
+                <td class="py-2.5 px-4 text-gray-500 whitespace-nowrap" title="${escapeHtml(log.run_at)}">${formatDateTime(log.run_at)}</td>
+                <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${badgeCls}">${escapeHtml(log.platform)}</span></td>
+                <td class="py-2.5 px-4 font-semibold text-gray-800">${target}</td>
+                <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold border ${statusCls}">${log.status === 'success' ? 'Berhasil' : 'Gagal'}</span></td>
+                <td class="py-2.5 px-4 max-w-md text-gray-600">${detail}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+        updatePagination();
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-red-500">Gagal memuat log: ${err.message}</td></tr>`;
+      }
+    }
+
+    function updatePagination() {
+      const start = currentTotal === 0 ? 0 : currentOffset + 1;
+      const end = Math.min(currentOffset + PAGE_SIZE, currentTotal);
+      document.getElementById('pagination-label').textContent = `Menampilkan ${start}-${end} dari ${currentTotal} log`;
+      document.getElementById('prev-page-btn').disabled = currentOffset === 0;
+      document.getElementById('next-page-btn').disabled = currentOffset + PAGE_SIZE >= currentTotal;
+    }
+
+    function initListeners() {
+      document.getElementById('filter-platform').addEventListener('change', () => {
+        currentOffset = 0;
+        loadLogs();
+      });
+      document.getElementById('filter-status').addEventListener('change', () => {
+        currentOffset = 0;
+        loadLogs();
+      });
+      document.getElementById('refresh-btn').addEventListener('click', () => {
+        loadSummary();
+        loadLogs();
+      });
+      document.getElementById('prev-page-btn').addEventListener('click', () => {
+        currentOffset = Math.max(0, currentOffset - PAGE_SIZE);
+        loadLogs();
+      });
+      document.getElementById('next-page-btn').addEventListener('click', () => {
+        currentOffset += PAGE_SIZE;
+        loadLogs();
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initListeners();
+      loadSummary();
+      loadLogs();
+    });
+  </script>
+</body>
+</html>

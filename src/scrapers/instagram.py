@@ -204,7 +204,7 @@ def _scrape_instagram_profile_bright_data(
             )
             logger.warning(err_msg)
             db.insert_scrape_log(
-                ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg)
+                ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg, target=username)
             )
             return 0, err_msg
 
@@ -230,7 +230,7 @@ def _scrape_instagram_profile_bright_data(
         err_msg = f"Bright Data Instagram scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
         db.insert_scrape_log(
-            ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg)
+            ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg, target=username)
         )
         return 0, err_msg
 
@@ -269,7 +269,7 @@ def _scrape_instagram_profile_instaloader(
         if not raw_posts:
             err_msg = f"Instaloader returned no usable Feed posts or Reels for @{username}"
             logger.warning(err_msg)
-            db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+            db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg, target=username))
             return 0, err_msg
 
         inserted_count, err = ingest_scraped_batch(
@@ -290,7 +290,7 @@ def _scrape_instagram_profile_instaloader(
     except instaloader.exceptions.ProfileNotExistsException:
         err_msg = f"Instagram profile @{username} does not exist"
         logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg, target=username))
         return 0, err_msg
 
     except Exception as exc:
@@ -304,7 +304,7 @@ def _scrape_instagram_profile_instaloader(
         else:
             err_msg = f"Instagram scrape failed for @{username}: {err_str}"
         logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg))
+        db.insert_scrape_log(ScrapeLog.create(platform="instagram", status="failed", error_message=err_msg, target=username))
         return 0, err_msg
 
 

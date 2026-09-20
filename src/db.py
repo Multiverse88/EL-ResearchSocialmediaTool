@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS scrape_logs (
     platform TEXT NOT NULL,
     status TEXT NOT NULL,
     error_message TEXT,
-    run_at TEXT NOT NULL
+    run_at TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_scrape_logs_platform_run ON scrape_logs(platform, run_at DESC);
@@ -157,6 +158,13 @@ class Database:
                     self.conn.execute("ALTER TABLE accounts ADD COLUMN monitoring_enabled INTEGER NOT NULL DEFAULT 1")
                 if cols and "follower_count" not in cols:
                     self.conn.execute("ALTER TABLE accounts ADD COLUMN follower_count INTEGER")
+            except Exception:
+                pass
+            try:
+                cursor = self.conn.execute("PRAGMA table_info(scrape_logs)")
+                cols = [row[1] for row in cursor.fetchall()]
+                if cols and "target" not in cols:
+                    self.conn.execute("ALTER TABLE scrape_logs ADD COLUMN target TEXT NOT NULL DEFAULT ''")
             except Exception:
                 pass
             self.conn.executescript(SCHEMA_SQL)
@@ -798,18 +806,48 @@ class Database:
         with self.conn:
             self.conn.execute(
                 """
-                INSERT INTO scrape_logs (id, platform, status, error_message, run_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO scrape_logs (id, platform, status, error_message, run_at, target)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (log.id, log.platform, log.status, log.error_message, log.run_at),
+                (log.id, log.platform, log.status, log.error_message, log.run_at, log.target),
             )
             return log.id
 
     log_scrape = insert_scrape_log
-    def list_scrape_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_scrape_logs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        platform: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        clauses = []
+        params: List[Any] = []
+        if platform and platform != "all":
+            clauses.append("platform = ?")
+            params.append(platform.lower())
+        if status and status != "all":
+            clauses.append("status = ?")
+            params.append(status.lower())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.extend([limit, offset])
         cursor = self.conn.execute(
-            "SELECT id, platform, status, error_message, run_at FROM scrape_logs ORDER BY run_at DESC LIMIT ?",
-            (limit,),
+            f"SELECT id, platform, status, error_message, run_at, target FROM scrape_logs "
+            f"{where_sql} ORDER BY run_at DESC LIMIT ? OFFSET ?",
+            params,
         )
-        cols = ("id", "platform", "status", "error_message", "run_at")
+        cols = ("id", "platform", "status", "error_message", "run_at", "target")
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    def count_scrape_logs(self, platform: Optional[str] = None, status: Optional[str] = None) -> int:
+        clauses = []
+        params: List[Any] = []
+        if platform and platform != "all":
+            clauses.append("platform = ?")
+            params.append(platform.lower())
+        if status and status != "all":
+            clauses.append("status = ?")
+            params.append(status.lower())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        cursor = self.conn.execute(f"SELECT COUNT(*) FROM scrape_logs {where_sql}", params)
+        return cursor.fetchone()[0]

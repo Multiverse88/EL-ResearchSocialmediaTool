@@ -208,6 +208,7 @@ def execute_daily_sync(
         status=overall_status,
         error_message=error_msg,
         run_at=start_iso,
+        target=f"{len(results)} akun/topik ({len(failures)} gagal)",
     )
     db.insert_scrape_log(log_entry)
 

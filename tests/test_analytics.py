@@ -207,6 +207,89 @@ class TestAnalyticsEngine(unittest.TestCase):
         legal_stats = get_brand_overview_stats(self.db, brand="easylegal", platform="all")
         self.assertEqual(legal_stats["kpis"]["total_posts"], 2)
 
+    def test_get_content_format_breakdown(self):
+        from src.analytics import get_content_format_breakdown
+        acc_brand = self.db.get_account_by_username("instagram", "id.easylegal")
+        self.db.insert_post(Post.create(
+            account_id=acc_brand.id, platform="instagram", content_type="reel",
+            platform_post_id="post-reel1", caption="Reel test", media_url="",
+            likes=200, comments=10, views=5000, posted_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        breakdown = get_content_format_breakdown(self.db)
+        self.assertIn("Reel", breakdown["brand"])
+        self.assertEqual(breakdown["brand"]["Reel"]["post_count"], 1)
+        self.assertEqual(breakdown["brand"]["Reel"]["avg_likes"], 200.0)
+
+    def test_get_posting_cadence(self):
+        from src.analytics import get_posting_cadence
+        cadence = get_posting_cadence(self.db)
+        self.assertEqual(len(cadence), 1)  # only id.easylegal is own_brand in seed data
+        entry = cadence[0]
+        self.assertEqual(entry["username"], "id.easylegal")
+        self.assertEqual(entry["post_count"], 2)
+        self.assertEqual(entry["days_since_last_post"], 0)  # most recent seeded post is "today"
+        self.assertEqual(entry["status"], "Aktif")
+
+    def test_get_posting_cadence_no_posts(self):
+        from src.analytics import get_posting_cadence
+        self.db.upsert_account(Account.create(platform="tiktok", username="id.easylegal", is_own_brand=True))
+        cadence = get_posting_cadence(self.db)
+        empty_entry = next(c for c in cadence if c["platform"] == "tiktok")
+        self.assertEqual(empty_entry["post_count"], 0)
+        self.assertEqual(empty_entry["status"], "Belum ada data")
+
+    def test_get_best_posting_time_shape(self):
+        from src.analytics import get_best_posting_time
+        heatmap = get_best_posting_time(self.db)
+        self.assertEqual(len(heatmap), 42)  # 7 days x 6 four-hour buckets
+        total_posts_counted = sum(cell["post_count"] for cell in heatmap)
+        self.assertEqual(total_posts_counted, 4)  # all 4 seeded posts have parseable posted_at
+
+    def test_get_hashtag_performance(self):
+        from src.analytics import get_hashtag_performance
+        acc_brand = self.db.get_account_by_username("instagram", "id.easylegal")
+        self.db.insert_post(Post.create(
+            account_id=acc_brand.id, platform="instagram",
+            platform_post_id="post-tag1", caption="Info penting #legalitas #pendirianpt", media_url="",
+            likes=100, comments=10, views=1000, posted_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        self.db.insert_post(Post.create(
+            account_id=acc_brand.id, platform="instagram",
+            platform_post_id="post-tag2", caption="Update terbaru #legalitas", media_url="",
+            likes=50, comments=5, views=500, posted_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        result = get_hashtag_performance(self.db, min_posts=2)
+        tags = {r["hashtag"]: r for r in result}
+        self.assertIn("#legalitas", tags)
+        self.assertEqual(tags["#legalitas"]["post_count"], 2)
+        # #pendirianpt only appears once -> dropped by min_posts=2
+        self.assertNotIn("#pendirianpt", tags)
+
+    def test_get_competitor_leaderboard(self):
+        from src.analytics import get_competitor_leaderboard
+        acc_comp2 = self.db.upsert_account(
+            Account.create(platform="instagram", username="another_competitor", is_own_brand=False)
+        )
+        self.db.insert_post(Post.create(
+            account_id=acc_comp2.id, platform="instagram",
+            platform_post_id="post-c3", caption="Competitor 2 post", media_url="",
+            likes=5, comments=1, views=100, posted_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        leaderboard = get_competitor_leaderboard(self.db, days=3650)
+        usernames = [r["username"] for r in leaderboard]
+        self.assertIn("legal_competitor", usernames)
+        self.assertIn("another_competitor", usernames)
+        # legal_competitor has far higher engagement (500+80 vs 5+1) -> ranked first
+        self.assertEqual(leaderboard[0]["username"], "legal_competitor")
+
+    def test_get_data_health(self):
+        from src.analytics import get_data_health
+        health = get_data_health(self.db)
+        self.assertEqual(len(health), 1)
+        entry = health[0]
+        self.assertEqual(entry["username"], "id.easylegal")
+        self.assertEqual(entry["post_count"], 2)
+        self.assertEqual(entry["views_data_completeness_pct"], 100)  # both seeded posts have views set
 
 if __name__ == "__main__":
     unittest.main()

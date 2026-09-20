@@ -34,3 +34,12 @@ def render_chat_page_html() -> str:
     Reads static/chat.html as the single source of truth.
     """
     return _render_static_page("chat.html", "Tanya AI - EasyCorp")
+
+
+def render_logs_page_html() -> str:
+    """
+    Renders the dedicated scraping log page (history of every scrape run: which
+    account/topic, platform, success/failure, error detail).
+    Reads static/logs.html as the single source of truth.
+    """
+    return _render_static_page("logs.html", "Log Scraping - EasyCorp")

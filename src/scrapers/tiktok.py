@@ -136,7 +136,7 @@ def _scrape_tiktok_profile_bright_data(
             )
             logger.warning(err_msg)
             db.insert_scrape_log(
-                ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg)
+                ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username)
             )
             return 0, err_msg
 
@@ -163,7 +163,7 @@ def _scrape_tiktok_profile_bright_data(
         err_msg = f"Bright Data TikTok scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
         db.insert_scrape_log(
-            ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg)
+            ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username)
         )
         return 0, err_msg
 
@@ -184,7 +184,7 @@ def _scrape_tiktok_profile_playwright(
         if not raw_posts:
             err_msg = f"TikTokApi returned no usable videos for @{username} (profile may be private, empty, or not found)"
             logger.warning(err_msg)
-            db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+            db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username))
             return 0, err_msg
 
         inserted_count, err = ingest_scraped_batch(
@@ -203,7 +203,7 @@ def _scrape_tiktok_profile_playwright(
     except Exception as exc:
         err_msg = f"TikTokApi scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username))
         return 0, err_msg
 
 
@@ -245,20 +245,20 @@ def _scrape_tiktok_profile_html(
             if resp.status_code == 404:
                 err_msg = f"TikTok account @{username} not found (HTTP 404)"
                 logger.error(err_msg)
-                db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+                db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username))
                 return 0, err_msg
 
             if resp.status_code != 200:
                 err_msg = f"TikTok request failed with status code {resp.status_code}"
                 logger.error(err_msg)
-                db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+                db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username))
                 return 0, err_msg
 
             data = _extract_sigi_or_hydration_data(resp.text)
             if not data:
                 err_msg = f"Could not extract video data from TikTok profile HTML for @{username} (page structure updated or captcha required)"
                 logger.warning(err_msg)
-                db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+                db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username))
                 return 0, err_msg
 
             item_module = data.get("ItemModule", {})
@@ -309,7 +309,7 @@ def _scrape_tiktok_profile_html(
     except Exception as exc:
         err_msg = f"TikTok scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
-        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg))
+        db.insert_scrape_log(ScrapeLog.create(platform="tiktok", status="failed", error_message=err_msg, target=username))
         return 0, err_msg
 
 

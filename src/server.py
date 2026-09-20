@@ -614,12 +614,20 @@ def trigger_scrape(payload: ScrapeRunRequest, background_tasks: BackgroundTasks)
 
 
 @app.get("/scrape/logs")
-def get_scrape_logs(limit: int = Query(50, ge=1, le=100)):
-    """GET /scrape/logs - List riwayat log scraping."""
-    logs = get_db().list_scrape_logs(limit=limit)
+def get_scrape_logs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    platform: Optional[str] = Query(None, description="instagram | tiktok | threads | daily_sync | all"),
+    status: Optional[str] = Query(None, description="success | failed | all"),
+):
+    """GET /scrape/logs - List riwayat log scraping, dengan filter platform/status dan paginasi."""
+    db_inst = get_db()
+    logs = db_inst.list_scrape_logs(limit=limit, offset=offset, platform=platform, status=status)
+    total = db_inst.count_scrape_logs(platform=platform, status=status)
     return {
         "status": "success",
         "count": len(logs),
+        "total": total,
         "data": logs,
     }
 
@@ -688,6 +696,61 @@ def api_analytics_brand_stats(
     return {"status": "success", "data": data}
 
 
+@app.get("/api/analytics/content-format")
+def api_analytics_content_format(days: Optional[int] = Query(None, ge=1, le=3650)):
+    """Returns post count and average engagement per content format (Feed/Reel), brand vs competitor."""
+    from .analytics import get_content_format_breakdown
+    data = get_content_format_breakdown(get_db(), days=days)
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/analytics/posting-cadence")
+def api_analytics_posting_cadence():
+    """Returns posting frequency and recency per own-brand account."""
+    from .analytics import get_posting_cadence
+    data = get_posting_cadence(get_db())
+    return {"status": "success", "count": len(data), "data": data}
+
+
+@app.get("/api/analytics/best-time")
+def api_analytics_best_time(is_own_brand: Optional[int] = Query(None, description="1 for brand, 0 for competitor")):
+    """Returns average engagement per day-of-week x hour-bucket, for a 'best time to post' heatmap."""
+    from .analytics import get_best_posting_time
+    data = get_best_posting_time(get_db(), is_own_brand=is_own_brand)
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/analytics/hashtag-performance")
+def api_analytics_hashtag_performance(
+    min_posts: int = Query(2, ge=1, le=50),
+    limit: int = Query(15, ge=1, le=100),
+    is_own_brand: Optional[int] = Query(None, description="1 for brand, 0 for competitor"),
+):
+    """Returns hashtags ranked by average engagement (hashtags used only once are dropped)."""
+    from .analytics import get_hashtag_performance
+    data = get_hashtag_performance(get_db(), min_posts=min_posts, limit=limit, is_own_brand=is_own_brand)
+    return {"status": "success", "count": len(data), "data": data}
+
+
+@app.get("/api/analytics/competitor-leaderboard")
+def api_analytics_competitor_leaderboard(
+    days: Optional[int] = Query(None, ge=1, le=3650),
+    limit: int = Query(10, ge=1, le=100),
+):
+    """Ranks individual competitor accounts by total engagement."""
+    from .analytics import get_competitor_leaderboard
+    data = get_competitor_leaderboard(get_db(), days=days, limit=limit)
+    return {"status": "success", "count": len(data), "data": data}
+
+
+@app.get("/api/analytics/data-health")
+def api_analytics_data_health():
+    """Returns per own-brand account: post count, % of posts with complete view-count data, last sync."""
+    from .analytics import get_data_health
+    data = get_data_health(get_db())
+    return {"status": "success", "data": data}
+
+
 @app.get("/analytics", response_class=HTMLResponse)
 def serve_analytics_dashboard():
     """Serves the Looker Studio-style interactive social media analytics dashboard."""
@@ -700,6 +763,13 @@ def serve_chat_page():
     """Serves the dedicated "Tanya AI" chat page (standalone, linked from the dashboard)."""
     from .dashboard import render_chat_page_html
     return HTMLResponse(content=render_chat_page_html())
+
+
+@app.get("/logs", response_class=HTMLResponse)
+def serve_logs_page():
+    """Serves the dedicated scraping log page (standalone, linked from the dashboard)."""
+    from .dashboard import render_logs_page_html
+    return HTMLResponse(content=render_logs_page_html())
 
 
 # Static Web Dashboard Mount

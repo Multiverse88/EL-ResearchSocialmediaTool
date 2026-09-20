@@ -146,11 +146,12 @@ def ingest_scraped_batch(
             norm_posts.append(post)
 
         inserted_count = db.upsert_posts(norm_posts)
-        
+
         log = ScrapeLog.create(
             platform=platform,
             status="success",
             error_message=None,
+            target=account.username,
         )
         db.insert_scrape_log(log)
         return inserted_count, None
@@ -161,6 +162,7 @@ def ingest_scraped_batch(
             platform=platform,
             status="failed",
             error_message=error_msg,
+            target=account.username,
         )
         db.insert_scrape_log(log)
         return 0, error_msg

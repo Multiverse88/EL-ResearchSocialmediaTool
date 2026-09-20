@@ -98,7 +98,7 @@ def _scrape_threads_profile_bright_data(
             )
             logger.warning(err_msg)
             db.insert_scrape_log(
-                ScrapeLog.create(platform="threads", status="failed", error_message=err_msg)
+                ScrapeLog.create(platform="threads", status="failed", error_message=err_msg, target=username)
             )
             return 0, err_msg
 
@@ -125,7 +125,7 @@ def _scrape_threads_profile_bright_data(
         err_msg = f"Bright Data Threads scrape failed for @{username}: {str(exc)}"
         logger.error(err_msg)
         db.insert_scrape_log(
-            ScrapeLog.create(platform="threads", status="failed", error_message=err_msg)
+            ScrapeLog.create(platform="threads", status="failed", error_message=err_msg, target=username)
         )
         return 0, err_msg
 
@@ -144,7 +144,7 @@ def scrape_threads_profile(
         err_msg = "Threads scraping requires Bright Data (BRIGHT_DATA_API_TOKEN not configured)"
         logger.warning(err_msg)
         db.insert_scrape_log(
-            ScrapeLog.create(platform="threads", status="failed", error_message=err_msg)
+            ScrapeLog.create(platform="threads", status="failed", error_message=err_msg, target=account.username)
         )
         return 0, err_msg, "bright_data"
     count, err = _scrape_threads_profile_bright_data(db, account, max_posts)
