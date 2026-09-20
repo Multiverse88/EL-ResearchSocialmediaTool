@@ -39,7 +39,7 @@ def _bright_data_item_to_raw_post(item: Dict[str, Any], username: str) -> Option
         "id": str(post_id),
         "caption": item.get("post_content") or item.get("content") or item.get("text") or item.get("description") or "",
         "media_url": item.get("image_url") or item.get("video_url") or item.get("thumbnail") or "",
-        "post_url": item.get("url") or item.get("post_url") or f"https://www.threads.net/@{username}/post/{post_id}",
+        "post_url": item.get("url") or item.get("post_url") or f"https://www.threads.com/@{username}/post/{post_id}",
         "likes": max(0, int(likes or 0)),
         "comments": max(0, int(comments or 0)),
         "views": None,
@@ -54,7 +54,7 @@ def _fetch_threads_follower_count(username: str) -> Optional[int]:
     try:
         items = run_dataset(
             THREADS_PROFILES_DATASET_ID,
-            [{"profile_url": f"https://www.threads.net/@{username}"}],
+            [{"profile_url": f"https://www.threads.com/@{username}"}],
             query={"type": "discover_new", "discover_by": "profile"},
         )
         for item in items:
@@ -80,7 +80,7 @@ def _scrape_threads_profile_bright_data(
     try:
         items = run_dataset(
             THREADS_POSTS_DATASET_ID,
-            [{"profile_url": f"https://www.threads.net/@{username}"}],
+            [{"profile_url": f"https://www.threads.com/@{username}"}],
             query={"type": "discover_new", "discover_by": "profile"},
         )
         raw_posts: List[Dict[str, Any]] = [

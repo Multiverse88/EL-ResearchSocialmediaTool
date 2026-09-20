@@ -27,7 +27,7 @@ class TestThreadsAdapter(unittest.TestCase):
     def test_constructs_permalink_when_url_missing(self):
         item = {k: v for k, v in THREADS_POSTS[0].items() if k != "url"}
         raw = th_module._bright_data_item_to_raw_post(item, "legalthreads")
-        self.assertEqual(raw["post_url"], "https://www.threads.net/@legalthreads/post/th-1")
+        self.assertEqual(raw["post_url"], "https://www.threads.com/@legalthreads/post/th-1")
 
     def test_provider_error_and_missing_id_are_rejected(self):
         self.assertIsNone(th_module._bright_data_item_to_raw_post({"error": "private"}, "legalthreads"))
@@ -59,6 +59,8 @@ class TestThreadsProfileScraper(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(backend, "bright_data")
         self.assertEqual(run.call_args_list[0].args[0], "gd_md75myxy14rihbjksa")
+        self.assertEqual(run.call_args_list[0].kwargs.get("query"), {"type": "discover_new", "discover_by": "profile"})
+        self.assertEqual(run.call_args_list[0].args[1], [{"profile_url": "https://www.threads.com/@legalthreads"}])
         self.assertEqual(run.call_args_list[1].args[0], "gd_mde7jg3ld2h3hnnf2")
 
         posts = self.db.query_posts(account_id=account.id)
