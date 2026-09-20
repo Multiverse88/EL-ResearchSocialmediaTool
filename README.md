@@ -1,8 +1,8 @@
-# EasyCorp Social Media Intelligence & Open WebUI AI Chat Panel
+# EasyCorp Social Media Intelligence & Analytics Dashboard
 
-Sistem terpadu untuk scraping data publik Instagram, TikTok & Threads secara terjadwal, menyimpannya di database, dan mengekspos data tersebut lewat chat panel berbasis AI ([Open WebUI](https://openwebui.com/) + Claude API Tool Use) di dashboard internal.
+Sistem terpadu untuk scraping data publik Instagram, TikTok & Threads secara terjadwal, menyimpannya di database, dan mengekspos data tersebut lewat dashboard analitik internal dengan panel chat AI **terintegrasi langsung di halaman yang sama** ("Tanya AI", didukung Claude API Tool Use).
 
-Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa engagement rata-rata akun EasyLegal bulan ini?"* atau *"Bandingkan performa akun EasyLegal vs kompetitor"*) tanpa perlu membuka spreadsheet atau query database manual.
+Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa engagement rata-rata akun EasyLegal bulan ini?"* atau *"Bandingkan performa akun EasyLegal vs kompetitor"*) tanpa perlu membuka spreadsheet, query database manual, atau berpindah ke aplikasi lain.
 
 ---
 
@@ -13,10 +13,10 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
   2. **Fallback self-hosted** (Instagram & TikTok saja — Threads tidak punya fallback gratis): Instagram via Instaloader (perlu login akun burner untuk mengurangi rate-limit), TikTok via `TikTokApi` + headless Chromium (Playwright).
   3. **Fallback terakhir**: TikTok raw HTML parsing kalau Playwright/Chromium tidak tersedia.
   - **Scheduler**: Runner siap dipanggil oleh Dokploy Scheduled Jobs (`0 2 * * *`).
-- **AI Chat Panel Berbasis Web ([Open WebUI](https://openwebui.com/))**:
-  - 100% web-based, diakses langsung via browser tanpa install aplikasi desktop.
+- **Panel "Tanya AI" Terintegrasi Langsung di Dashboard**:
+  - Muncul sebagai drawer di halaman dashboard yang sama tempat grafik & statistik ditampilkan — bukan aplikasi terpisah, jadi tidak ada bolak-balik antar domain.
   - Didukung oleh model Claude API (`claude-3-5-sonnet`) dengan integrasi native **Tool Use**.
-  - Auto-discovery model via endpoint `/v1/models` dan `/v1/chat/completions`.
+  - Endpoint `/v1/models` dan `/v1/chat/completions` tetap tersedia sebagai API OpenAI-compatible generik untuk klien eksternal lain bila dibutuhkan.
 - **Live Scrape-on-Chat**: kalau topik yang ditanya belum pernah di-scrape atau datanya sudah lebih tua dari `TOPIC_STALENESS_HOURS` (default 24 jam), sistem otomatis scraping dulu sebelum AI menjawab — jawaban selalu berbasis data terkini, bukan cuma hasil scraping terjadwal semalam. Bisa dimatikan via `ENABLE_LIVE_SCRAPE_ON_CHAT=false`.
 - **Chat-to-Scraper Action**: chat bisa langsung dipakai untuk mengelola monitoring dan menjalankan scrape via Bright Data — bukan cuma bertanya. Contoh perintah: *"Cari 20 post terbaru @kompetitor_a"*, *"Mulai monitor @id.easylegal"*, *"Ganti akun EasyLegal jadi @id.easylegal"*, *"Berhenti monitor @legalku"*, *"Bandingkan @id.easylegal dengan @legalku"*. Pesan diterjemahkan lewat parser deterministik untuk perintah eksplisit, dengan AI planner (JSON terstruktur via router) sebagai fallback untuk kalimat yang lebih natural. Lihat `src/chat_actions.py`.
 - **Claude API Tools**:
@@ -26,7 +26,7 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
 - **Internal Web Dashboard**:
   - Tampilan web siap pakai untuk kelola akun yang dimonitor, filter data postingan, dan trigger scraping manual.
 - **Dokploy Ready (Docker Compose)**:
-  - 1 file `docker-compose.yml` yang langsung menjalankan backend API, scrapers, dan Open WebUI dengan persistent volumes.
+  - 1 file `docker-compose.yml` yang menjalankan backend API + dashboard + chat AI dalam satu container, dengan persistent volume.
 
 ---
 
@@ -40,10 +40,10 @@ Memungkinkan tim marketing untuk bertanya dalam bahasa natural (misal: *"Berapa 
                                                         - REST Endpoints (/accounts, /posts)
                                                         - Claude Tool-Use Handler
                                                         - OpenAI-Compatible Adapter (/v1)
+                                                        - Analytics Dashboard + Embedded "Tanya AI" Panel (/analytics)
                                                                       │
                                                                       ▼
-                                                    [Open WebUI - Web Chat Panel]
-                                                    (Akses via browser di Port 3000)
+                                                    [Browser - Dashboard + Chat, 1 Domain]
 ```
 
 ---
@@ -67,11 +67,10 @@ BRIGHT_DATA_API_TOKEN=isi-dengan-token-bright-data
 BRIGHT_DATA_SERP_ZONE=nama-zone-serp
 CHAT_ACTION_API_KEY=isi-dengan-secret-acak
 ```
-`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Scraper Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions` — set nilai yang sama sebagai `OPENAI_API_KEY` service `open-webui` di `docker-compose.yml` supaya hanya instance Open WebUI internal yang bisa menjalankannya.
+`CHAT_ACTION_API_KEY` membatasi siapa yang boleh memicu Chat-to-Scraper Action (lihat di atas) lewat `/chat` dan `/v1/chat/completions`. Dashboard membaca nilai ini secara otomatis (di-render server-side ke dalam halaman) sehingga panel "Tanya AI" langsung terautentikasi tanpa konfigurasi tambahan.
 
 ### 3. Setting Routing / Domain (Tab Domains)
-- **Open WebUI (Chat Panel)**: Arahkan ke service `open-webui` port `8080`.
-- **Dashboard & API**: Arahkan ke service `api` port `8000`.
+- **Dashboard, Chat AI & API**: Arahkan ke service `api` port `8000` (satu domain untuk semuanya, misal `sosmed.easycorp.id`).
 
 ### 4. Setup Cron Harian (Tab Scheduled Jobs)
 - **Schedule**: `0 2 * * *` (setiap hari jam 02:00 pagi)
@@ -119,9 +118,9 @@ python3 -m unittest discover -s tests -p "test_*.py"
 | `POST` | `/accounts` | Daftarkan akun baru (`platform`, `username`, `is_own_brand`) |
 | `GET` | `/posts` | Query postingan (`keyword`, `platform`, `username`, `from`, `to`, `limit`, `offset`) |
 | `GET` | `/posts/summary` | Ringkasan engagement per akun (`account_id` atau `username`) |
-| `POST` | `/chat` | Endpoint utama chat dengan Claude tool-use |
-| `GET` | `/v1/models` | OpenAI-compatible discovery untuk Open WebUI |
-| `POST` | `/v1/chat/completions` | OpenAI-compatible chat untuk Open WebUI |
+| `POST` | `/chat` | Endpoint utama chat dengan Claude tool-use (dipakai oleh panel "Tanya AI" di dashboard) |
+| `GET` | `/v1/models` | OpenAI-compatible model discovery (generik, untuk klien eksternal) |
+| `POST` | `/v1/chat/completions` | OpenAI-compatible chat completion (generik, untuk klien eksternal) |
 | `POST` | `/scrape/run` | Trigger proses scraping di background |
 | `GET` | `/scrape/logs` | Riwayat log status scraping |
 

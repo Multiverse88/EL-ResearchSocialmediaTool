@@ -84,8 +84,8 @@ class TestServerE2E(unittest.TestCase):
         comp_data = res_comp.json()
         self.assertEqual(comp_data["status"], "success")
 
-    def test_05_open_webui_integration(self):
-        # 1. Open WebUI Model Discovery endpoint
+    def test_05_openai_compatible_api(self):
+        # 1. OpenAI-compatible model discovery endpoint (used by any OpenAI-compatible client)
         res_models = self.client.get("/v1/models")
         self.assertEqual(res_models.status_code, 200)
         models_data = res_models.json()
@@ -93,7 +93,7 @@ class TestServerE2E(unittest.TestCase):
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn("social-media-claude-agent", model_ids)
 
-        # 2. Open WebUI Chat Completion endpoint - default streaming (SSE) for typing animation
+        # 2. OpenAI-compatible chat completion endpoint - default streaming (SSE) for typing animation
         payload = {
             "model": "social-media-claude-agent",
             "messages": [

@@ -75,16 +75,16 @@ def require_api_key(
 # Bearer`) on the chat endpoints. Chat can translate natural-language messages into
 # Bright Data scrapes and monitoring mutations (see chat_actions.py), so — unlike the
 # zero-config internal-tool default for plain CRUD writes above — this is meant to be
-# set in any deployment reachable by more than the operator's own OpenWebUI instance.
-# Left unset, chat stays open (matches this project's existing zero-config default) but
-# a warning is logged once so the gap is visible in logs.
+# set in any deployment reachable by more than the dashboard's own embedded "Tanya AI"
+# panel. Left unset, chat stays open (matches this project's existing zero-config
+# default) but a warning is logged once so the gap is visible in logs.
 CHAT_ACTION_API_KEY = os.getenv("CHAT_ACTION_API_KEY", "").strip()
 if not CHAT_ACTION_API_KEY:
     logger.warning(
         "CHAT_ACTION_API_KEY is not set. Chat endpoints (POST /chat, /v1/chat/completions) are "
         "UNAUTHENTICATED and can trigger Bright Data scraping/monitoring mutations from any caller. "
-        "Set CHAT_ACTION_API_KEY in Dokploy Environment and configure it as your OpenWebUI "
-        "instance's OPENAI_API_KEY to restrict chat-driven actions to your internal OpenWebUI."
+        "Set CHAT_ACTION_API_KEY in Dokploy Environment to require an X-API-Key header on those "
+        "routes; the dashboard's embedded chat panel reads the same value automatically."
     )
 
 
@@ -150,9 +150,7 @@ _default_allowed_origins = [
     "https://sosmed.easycorp.id",
     "https://easylegal-socialmediaresearchtool-kftevw-d3117c-157-10-252-77.sslip.io",
     "http://100.81.215.57:8000",
-    "http://100.81.215.57:3080",
     "http://localhost:8000",
-    "http://localhost:3080",
 ]
 _allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
 ALLOWED_ORIGINS = (
@@ -442,7 +440,7 @@ def chat_endpoint(payload: ChatRequest):
 @app.get("/v1/models")
 def list_openai_models():
     """
-    OpenAI-compatible models discovery endpoint for Open WebUI.
+    OpenAI-compatible models discovery endpoint for external OpenAI-compatible clients.
     """
     return {
         "object": "list",
@@ -472,8 +470,8 @@ def list_openai_models():
 @app.post("/v1/chat/completions", dependencies=[Depends(enforce_chat_rate_limit), Depends(require_chat_action_key)])
 def openai_compatible_chat(payload: ChatRequest):
     """
-    OpenAI-compatible endpoint for Open WebUI, LibreChat, and standard AI webchat clients.
-    Streams live SSE chunks (content + reasoning) by default so Open WebUI renders the
+    OpenAI-compatible endpoint for LibreChat and other standard AI webchat clients.
+    Streams live SSE chunks (content + reasoning) by default so the client renders a
     typing/thinking animation; pass stream=false for a single buffered JSON response.
     """
     user_msg = payload.message

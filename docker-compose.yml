@@ -1,5 +1,5 @@
 services:
-  # 1. Backend REST API, Scrapers & OpenAI Adapter for Open WebUI
+  # Backend REST API, Scrapers, AI Chat (embedded in the dashboard), and Analytics Dashboard
   api:
     build:
       context: .
@@ -31,7 +31,6 @@ services:
       - MAX_POSTS_PER_SCRAPE=${MAX_POSTS_PER_SCRAPE:-30}
       - ENABLE_LIVE_SCRAPE_ON_CHAT=${ENABLE_LIVE_SCRAPE_ON_CHAT:-true}
       - TOPIC_STALENESS_HOURS=${TOPIC_STALENESS_HOURS:-24}
-      - ANALYTICS_DASHBOARD_URL=${ANALYTICS_DASHBOARD_URL:-https://sosmed.easycorp.id/analytics}
       - ENABLE_DAILY_SYNC_SCHEDULER=${ENABLE_DAILY_SYNC_SCHEDULER:-true}
     volumes:
       - app-data:/app/data
@@ -44,33 +43,9 @@ services:
     networks:
       - easycorp_network
 
-  # 2. Open WebUI (Open-source Web-based AI Chat Panel)
-  # Uses port 3080 to avoid collision with Dokploy dashboard on port 3000
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: easycorp_open_webui
-    restart: unless-stopped
-    ports:
-      - "${WEBUI_PORT:-3080}:8080"
-    environment:
-      - OPENAI_API_BASE_URL=http://api:8000/v1
-      - OPENAI_API_KEY=${CHAT_ACTION_API_KEY:-sk-easycorp-key}
-      - WEBUI_NAME=EasyCorp Social Media AI
-      - DEFAULT_MODELS=social-media-claude-agent
-      - ENABLE_SIGNUP=true
-    volumes:
-      - open-webui-data:/app/backend/data
-    depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - easycorp_network
-
 volumes:
   app-data:
     name: easycorp_social_app_data
-  open-webui-data:
-    name: easycorp_social_webui_data
 
 networks:
   easycorp_network:

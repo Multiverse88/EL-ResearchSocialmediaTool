@@ -1,6 +1,6 @@
 # Panduan Deployment via Docker Compose di Dokploy
 
-Panduan langkah demi langkah untuk deploy sistem **Social Media Scraper + Open WebUI Chat Panel** di Dokploy VPS menggunakan Docker Compose.
+Panduan langkah demi langkah untuk deploy sistem **Social Media Scraper + Analytics Dashboard + Panel Chat AI Terintegrasi** di Dokploy VPS menggunakan Docker Compose.
 
 ---
 
@@ -65,19 +65,17 @@ Klik **Save**.
 
 ## 4. Konfigurasi Domain & Akses Web (Traefik)
 
-Di tab **Domains** pada Dokploy, Anda bisa menambahkan 2 domain terpisah (atau sub-domain):
+Di tab **Domains** pada Dokploy, arahkan satu domain ke service `api`:
 
-### Domain 1: Chat Panel untuk Tim Marketing (Open WebUI)
-- **Domain**: `chat-marketing.domainanda.com`
-- **Service**: `open-webui`
-- **Container Port**: `8080` (port internal Open WebUI)
-- **Certificate**: Let's Encrypt (HTTPS otomatis aktif)
-
-### Domain 2: Dashboard Internal & Backend API
-- **Domain**: `social-api.domainanda.com`
+### Dashboard, Chat AI & Backend API (1 Domain)
+- **Domain**: `sosmed.domainanda.com`
 - **Service**: `api`
 - **Container Port**: `8000`
-- **Certificate**: Let's Encrypt
+- **Certificate**: Let's Encrypt (HTTPS otomatis aktif)
+
+Domain ini melayani dashboard analitik (`/analytics`), panel chat "Tanya AI" yang terpasang
+langsung di halaman yang sama, dan seluruh REST API backend — tidak ada domain/container
+terpisah yang perlu dikonfigurasi lagi.
 
 ---
 
@@ -85,9 +83,8 @@ Di tab **Domains** pada Dokploy, Anda bisa menambahkan 2 domain terpisah (atau s
 
 1. Klik tombol **Deploy** di Dokploy.
 2. Dokploy akan:
-   - Membangun container `api` (FastAPI backend & scrapers).
-   - Mengunduh image `open-webui` (`ghcr.io/open-webui/open-webui:main`).
-   - Menjalankan healthcheck otomatis hingga seluruh service sehat (`healthy`).
+   - Membangun container `api` (FastAPI backend, scrapers, dashboard & chat AI).
+   - Menjalankan healthcheck otomatis hingga service sehat (`healthy`).
 
 ---
 
@@ -110,12 +107,11 @@ Sesuai PRD Section 10, scraping harian dijalankan via fitur **Scheduled Jobs** d
 
 ## 7. Cara Penggunaan untuk Tim Marketing
 
-1. Buka URL Open WebUI di browser: `https://chat-marketing.domainanda.com` (atau `http://<ip-vps>:3000`).
-2. Buat akun pertama (user pertama otomatis menjadi Admin Open WebUI).
-3. Di dropdown model atas, model **`social-media-claude-agent`** otomatis terpilih.
-4. Tim marketing bisa langsung bertanya dalam bahasa natural:
+1. Buka URL dashboard di browser: `https://sosmed.domainanda.com` (atau `http://<ip-vps>:8000`).
+2. Statistik dan grafik untuk EasyLegal, EasyTax, dan EasyOffice langsung tampil di halaman utama.
+3. Klik tombol **Tanya AI** di pojok kanan atas untuk membuka panel chat, lalu tanyakan dalam bahasa natural:
    - *"Berapa rata-rata likes dan engagement rate akun EasyLegal bulan ini?"*
    - *"Bandingkan performa akun easylegal_id vs kompetitor legalku_official"*
    - *"Cari postingan yang membahas tentang izin PT dan OSS"*
    - *"Konten seperti apa yang memiliki likes tertinggi di TikTok EasyLegal?"*
-5. Open WebUI akan memanggil backend tool secara otomatis dan menyajikan jawaban analisis lengkap beserta angka faktual.
+4. Panel chat memanggil backend tool secara otomatis dan menyajikan jawaban analisis lengkap beserta angka faktual, tanpa perlu membuka aplikasi atau domain lain.
