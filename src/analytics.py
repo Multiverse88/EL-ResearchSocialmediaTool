@@ -326,7 +326,8 @@ def get_competitor_comparison(
     for keyword, label in NICHE_KEYWORDS:
         like_kw = f"%{keyword}%"
         sql_topic = """
-            SELECT a.is_own_brand, COUNT(*), COALESCE(SUM(p.views), 0)
+            SELECT a.is_own_brand, COUNT(*), COALESCE(SUM(p.views), 0),
+                   COALESCE(SUM(p.likes), 0) + COALESCE(SUM(p.comments), 0)
             FROM posts p
             JOIN accounts a ON p.account_id = a.id
             WHERE p.posted_at >= ?
@@ -334,14 +335,19 @@ def get_competitor_comparison(
             GROUP BY a.is_own_brand
         """
         cursor = db.conn.execute(sql_topic, (cutoff_iso, like_kw, like_kw))
-        entry = {"brand_posts": 0, "brand_views": 0, "competitor_posts": 0, "competitor_views": 0}
-        for is_own, count, views in cursor.fetchall():
+        entry = {
+            "brand_posts": 0, "brand_views": 0, "brand_engagement": 0,
+            "competitor_posts": 0, "competitor_views": 0, "competitor_engagement": 0,
+        }
+        for is_own, count, views, engagement in cursor.fetchall():
             if is_own == 1:
                 entry["brand_posts"] = count
                 entry["brand_views"] = views
+                entry["brand_engagement"] = engagement
             else:
                 entry["competitor_posts"] = count
                 entry["competitor_views"] = views
+                entry["competitor_engagement"] = engagement
         topic_map[label] = entry
 
     # Top viral hooks for brand vs competitor
