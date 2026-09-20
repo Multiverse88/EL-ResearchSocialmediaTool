@@ -113,6 +113,7 @@ class ActionExecutionResult:
     receipts: List[ActionReceipt] = field(default_factory=list)
     matched_topic: Optional[str] = None
     matched_account: Optional[Tuple[str, str]] = None  # (platform, username)
+    matched_accounts: List[Tuple[str, str]] = field(default_factory=list)  # 2+ accounts (compare_profiles)
     clarification: Optional[str] = None
     context_text: str = ""
     status_lines: List[str] = field(default_factory=list)
@@ -854,6 +855,7 @@ class ChatActionOrchestrator:
         receipts: List[ActionReceipt] = []
         matched_topic: Optional[str] = None
         matched_account: Optional[Tuple[str, str]] = None
+        matched_accounts: List[Tuple[str, str]] = []
         for action in plan.actions:
             action_type = getattr(action, "type", None)
             if action_type == "scrape_profile":
@@ -871,9 +873,11 @@ class ChatActionOrchestrator:
                     progress_callback(receipt.detail)
                 matched_topic = action.keyword
             elif action_type == "compare_profiles":
-                receipts.extend(_execute_compare_profiles(
+                compare_receipts = _execute_compare_profiles(
                     db, action, self.ttl_hours, progress_callback=progress_callback,
-                ))
+                )
+                receipts.extend(compare_receipts)
+                matched_accounts = [(r.platform, r.target) for r in compare_receipts]
             elif action_type == "monitor_account":
                 receipt = _execute_monitor_account(
                     db, action, progress_callback=progress_callback,
@@ -893,6 +897,7 @@ class ChatActionOrchestrator:
             receipts=receipts,
             matched_topic=matched_topic,
             matched_account=matched_account,
+            matched_accounts=matched_accounts,
             context_text=_render_context(receipts),
             status_lines=[r.detail for r in receipts],
         )

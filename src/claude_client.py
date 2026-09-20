@@ -560,6 +560,24 @@ Postingan dengan Likes Tertinggi:
 
         return text, summary
 
+    def _build_multi_account_context_text(
+        self, db: Database, account_refs: List[Tuple[str, str]],
+    ) -> Tuple[str, str]:
+        """Builds concatenated factual context for 2+ SPECIFIC accounts — used for
+        compare_profiles, so a "bandingkan @a vs @b" request is grounded on each
+        account's own full post history instead of just the pass/fail scrape receipt
+        (which has no likes/comments/views data at all). Returns (context_text,
+        subject_label)."""
+        parts = []
+        usernames = []
+        for platform, username in account_refs:
+            text, _ = self._build_account_context_text(db, platform, username)
+            parts.append(text)
+            usernames.append(f"@{username}")
+        context_text = "\n".join(parts)
+        subject_label = "perbandingan akun " + " vs ".join(usernames)
+        return context_text, subject_label
+
     def _build_router_context(
         self,
         db: Database,
@@ -568,42 +586,54 @@ Postingan dengan Likes Tertinggi:
         matched_topic: Optional[str] = None,
         action_context_text: str = "",
         account_ref: Optional[Tuple[str, str]] = None,
+        account_refs: Optional[List[Tuple[str, str]]] = None,
     ):
         """
         Resolves topic (unless already provided by the caller), live-scrapes it if stale,
         pulls factual DB context, and builds the router request payload.
 
+        When `account_refs` has 2+ entries (a chat_actions compare_profiles action),
+        context is grounded on EACH account's full post history concatenated together —
+        without this, a compare request only sees pass/fail scrape receipts with no
+        actual likes/comments/views to compare.
+
         When `account_ref` is set (a chat_actions profile-level action resolved a
-        specific account), context is grounded on that account's full post history
+        single specific account), context is grounded on that account's full post history
         instead — topic-keyword resolution never runs, so an unrelated word extracted
         from the sentence can't silently filter the account's own data.
         """
-        if account_ref is None:
-            # Explicit topics in the new message take precedence. Otherwise preserve the
-            # most recent account subject for follow-ups such as "apa aja konten terbaru
-            # nya" instead of extracting a filler word ("aja") as a new keyword.
-            has_explicit_topic = any(topic in user_message.lower() for topic in self._resolve_topics(db))
-            if not has_explicit_topic:
-                account_ref = self._resolve_conversation_account(db, user_message, history)
-        if account_ref is not None:
-            platform, username = account_ref
-            context_text, account_summary = self._build_account_context_text(db, platform, username)
-            subject_data: Dict[str, Any] = {"platform": platform, "username": username, **account_summary}
-            subject_label = f"akun @{username}"
+        if account_refs and len(account_refs) >= 2:
+            context_text, subject_label = self._build_multi_account_context_text(db, account_refs)
+            subject_data: Dict[str, Any] = {
+                "accounts": [{"platform": p, "username": u} for p, u in account_refs],
+            }
         else:
-            if matched_topic is None:
-                matched_topic, topic_is_confident = self._resolve_matched_topic(db, user_message, history)
-                if topic_is_confident:
-                    self._ensure_topic_freshness(db, matched_topic)
+            if account_ref is None:
+                # Explicit topics in the new message take precedence. Otherwise preserve the
+                # most recent account subject for follow-ups such as "apa aja konten terbaru
+                # nya" instead of extracting a filler word ("aja") as a new keyword.
+                has_explicit_topic = any(topic in user_message.lower() for topic in self._resolve_topics(db))
+                if not has_explicit_topic:
+                    account_ref = self._resolve_conversation_account(db, user_message, history)
+            if account_ref is not None:
+                platform, username = account_ref
+                context_text, account_summary = self._build_account_context_text(db, platform, username)
+                subject_data = {"platform": platform, "username": username, **account_summary}
+                subject_label = f"akun @{username}"
+            else:
+                if matched_topic is None:
+                    matched_topic, topic_is_confident = self._resolve_matched_topic(db, user_message, history)
+                    if topic_is_confident:
+                        self._ensure_topic_freshness(db, matched_topic)
 
-            # Pull real data from database for this topic to inject as factual context
-            topic_data = db.get_topic_summary(matched_topic)
-            viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=8)
-            ig_summary = db.get_topic_summary(matched_topic, platform="instagram")
-            tt_summary = db.get_topic_summary(matched_topic, platform="tiktok")
-            account_breakdown = db.get_topic_account_breakdown(matched_topic, limit=8)
+                # Pull real data from database for this topic to inject as factual context
+                topic_data = db.get_topic_summary(matched_topic)
+                viral_posts = db.query_posts(topic=matched_topic, order_by="likes", limit=8)
+                ig_summary = db.get_topic_summary(matched_topic, platform="instagram")
+                tt_summary = db.get_topic_summary(matched_topic, platform="tiktok")
+                account_breakdown = db.get_topic_account_breakdown(matched_topic, limit=8)
 
-            context_text = f"""
+                context_text = f"""
 [DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL]:
 Topik / Kata Kunci: '{matched_topic}'
 Total Postingan Termonitor (semua platform): {topic_data.get('total_posts', 0)} post
@@ -618,24 +648,24 @@ Breakdown per Platform:
 
 Daftar Postingan Viral Terkait (Gunakan data akun dan metrik berikut jika user bertanya akun mana atau minta daftar postingan):
 """
-            for idx, p in enumerate(viral_posts, 1):
-                content_label = (p.get("content_type") or "post").upper()
-                v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
-                link_txt = f", Link: {p['post_url']}" if p.get("post_url") else ""
-                context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()} · {content_label}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt}{link_txt})\n"
+                for idx, p in enumerate(viral_posts, 1):
+                    content_label = (p.get("content_type") or "post").upper()
+                    v_txt = f"{p['views']:,} views" if p.get("views") is not None else "views tidak tersedia"
+                    link_txt = f", Link: {p['post_url']}" if p.get("post_url") else ""
+                    context_text += f"{idx}. Akun @{p['username']} [{p['platform'].upper()} · {content_label}]: \"{p['caption'][:120]}...\" (Likes: {p['likes']:,}, Views: {v_txt}{link_txt})\n"
 
-            context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
-            if account_breakdown:
-                for idx, a in enumerate(account_breakdown, 1):
-                    context_text += (
-                        f"{idx}. @{a['username']} [{a['platform'].upper()}]: {a['post_count']} post, "
-                        f"rata-rata {a['avg_likes']:,} likes, likes tertinggi {a['max_likes']:,}\n"
-                    )
-            else:
-                context_text += "(Belum ada akun yang tertangkap scraping untuk topik ini.)\n"
+                context_text += "\nAkun Paling Aktif Membahas Topik Ini (jumlah post & rata-rata likes yang tertangkap scraping):\n"
+                if account_breakdown:
+                    for idx, a in enumerate(account_breakdown, 1):
+                        context_text += (
+                            f"{idx}. @{a['username']} [{a['platform'].upper()}]: {a['post_count']} post, "
+                            f"rata-rata {a['avg_likes']:,} likes, likes tertinggi {a['max_likes']:,}\n"
+                        )
+                else:
+                    context_text += "(Belum ada akun yang tertangkap scraping untuk topik ini.)\n"
 
-            subject_data = topic_data
-            subject_label = f"topik '{matched_topic}'"
+                subject_data = topic_data
+                subject_label = f"topik '{matched_topic}'"
 
         if action_context_text:
             context_text += f"\n{action_context_text}"
@@ -694,10 +724,11 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         """Calls 9router / OpenAI-compatible endpoint with enriched database context (buffered, non-streaming)."""
         matched_topic = action_result.matched_topic if action_result else None
         account_ref = action_result.matched_account if action_result else None
+        account_refs = action_result.matched_accounts if action_result else None
         action_context_text = action_result.context_text if action_result else ""
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
             db, user_message, history, matched_topic=matched_topic,
-            action_context_text=action_context_text, account_ref=account_ref,
+            action_context_text=action_context_text, account_ref=account_ref, account_refs=account_refs,
         )
         payload = {
             "model": target_model,
@@ -751,8 +782,9 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         """
         matched_topic = action_result.matched_topic if action_result else None
         account_ref = action_result.matched_account if action_result else None
+        account_refs = action_result.matched_accounts if action_result else None
         action_context_text = action_result.context_text if action_result else ""
-        if matched_topic is None and account_ref is None:
+        if matched_topic is None and account_ref is None and not account_refs:
             matched_topic, topic_is_confident = self._resolve_matched_topic(db, user_message, history)
             freshness_status = self._ensure_topic_freshness(db, matched_topic) if topic_is_confident else None
             if freshness_status:
@@ -760,7 +792,7 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 
         endpoint_url, headers, target_model, messages, matched_topic, topic_data = self._build_router_context(
             db, user_message, history, matched_topic=matched_topic,
-            action_context_text=action_context_text, account_ref=account_ref,
+            action_context_text=action_context_text, account_ref=account_ref, account_refs=account_refs,
         )
         payload = {
             "model": target_model,
@@ -821,8 +853,15 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         tool_results_data = []
 
         system_prompt = DEFAULT_SYSTEM_PROMPT
-        if action_result and action_result.context_text:
-            system_prompt = f"{DEFAULT_SYSTEM_PROMPT}\n\n{action_result.context_text}"
+        extra_context = ""
+        if action_result:
+            if action_result.matched_accounts and len(action_result.matched_accounts) >= 2:
+                multi_text, _ = self._build_multi_account_context_text(db, action_result.matched_accounts)
+                extra_context += f"\n\n{multi_text}"
+            if action_result.context_text:
+                extra_context += f"\n\n{action_result.context_text}"
+        if extra_context:
+            system_prompt = f"{DEFAULT_SYSTEM_PROMPT}{extra_context}"
 
         response = self.client.messages.create(
             model=self.model,
