@@ -792,9 +792,9 @@ Peringkat Akun Kompetitor:
                   f"**MODIFIKASI untuk @{baseline['username']}**\n"
                   f"1. Hook: “Sebelum mengurus {focus}, cek 3 risiko ini.” Format: carousel "
                   "checklist; CTA: simpan sebagai panduan.\n"
-                  f"2. Hook: “Kesalahan {focus} yang terlihat sepele tetapi paling sering "
+                  f"2. Hook: “Kesalahan terkait {focus} yang terlihat sepele tetapi paling sering "
                   "menghambat bisnis.” Format: video singkat masalah → dampak → solusi.\n"
-                  f"3. Hook: “Sudah yakin {focus} bisnis Anda aman?” Format: audit mandiri "
+                  f"3. Hook: “Sudah yakin {focus} untuk bisnis Anda aman?” Format: audit mandiri "
                   "3 pertanyaan; CTA: komentari bagian yang paling membingungkan."
             )
 
