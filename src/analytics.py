@@ -209,6 +209,8 @@ def get_viral_leaderboard(
     platform: Optional[str] = None,
     topic: Optional[str] = None,
     brand: Optional[str] = None,
+    sort_by: str = "performance",
+    sort_order: str = "desc",
 ) -> List[Dict[str, Any]]:
     """
     Returns top posts sorted by views (or likes if views null), with author info,
@@ -226,8 +228,17 @@ def get_viral_leaderboard(
     }
     norm_brand = brand_aliases.get(norm_brand, norm_brand)
     brand_pattern = f"%{norm_brand}%" if norm_brand in {"easylegal", "easytax", "easyoffice"} else None
+    normalized_sort = (sort_by or "performance").strip().lower()
+    normalized_order = (sort_order or "desc").strip().lower()
+    direction = "ASC" if normalized_order == "asc" else "DESC"
+    order_clauses = {
+        "performance": f"COALESCE(p.views, 0) {direction}, p.likes {direction}, p.posted_at DESC",
+        "brand": f"LOWER(a.username) {direction}, p.posted_at DESC",
+        "posted_at": f"p.posted_at {direction}, COALESCE(p.views, 0) DESC",
+    }
+    order_clause = order_clauses.get(normalized_sort, order_clauses["performance"])
 
-    sql = """
+    sql = f"""
         SELECT
             p.id,
             p.platform_post_id,
@@ -249,7 +260,7 @@ def get_viral_leaderboard(
           AND (? IS NULL OR a.is_own_brand = ?)
           AND (? IS NULL OR LOWER(p.topic) = ?)
           AND (? IS NULL OR LOWER(a.username) LIKE ?)
-        ORDER BY COALESCE(p.views, 0) DESC, p.likes DESC
+        ORDER BY {order_clause}
         LIMIT ?
     """
     params = (

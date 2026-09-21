@@ -665,8 +665,10 @@ def api_analytics_leaderboard(
     platform: Optional[str] = Query(None),
     topic: Optional[str] = Query(None),
     brand: Optional[str] = Query(None),
+    sort_by: str = Query("performance", pattern="^(performance|brand|posted_at)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
-    """Returns top-ranking viral posts with hook previews and permalinks."""
+    """Returns filtered posts ordered by performance, brand, or posting time."""
     from .analytics import get_viral_leaderboard
     data = get_viral_leaderboard(
         get_db(),
@@ -676,6 +678,8 @@ def api_analytics_leaderboard(
         platform=platform,
         topic=topic,
         brand=brand,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
     return {"status": "success", "count": len(data), "data": data}
 

@@ -185,6 +185,31 @@ class TestAnalyticsEngine(unittest.TestCase):
 
         office_lb = get_viral_leaderboard(self.db, limit=5, days=30, brand="easyoffice")
         self.assertEqual([item["username"] for item in office_lb], ["id.easyoffice"])
+
+        brand_asc = get_viral_leaderboard(
+            self.db, limit=10, days=30, sort_by="brand", sort_order="asc"
+        )
+        brand_asc_usernames = [item["username"] for item in brand_asc]
+        self.assertEqual(brand_asc_usernames, sorted(brand_asc_usernames))
+
+        brand_desc = get_viral_leaderboard(
+            self.db, limit=10, days=30, sort_by="brand", sort_order="desc"
+        )
+        brand_desc_usernames = [item["username"] for item in brand_desc]
+        self.assertEqual(brand_desc_usernames, sorted(brand_desc_usernames, reverse=True))
+
+        oldest_first = get_viral_leaderboard(
+            self.db, limit=10, days=30, sort_by="posted_at", sort_order="asc"
+        )
+        oldest_dates = [item["posted_at"] for item in oldest_first]
+        self.assertEqual(oldest_dates, sorted(oldest_dates))
+
+        newest_first = get_viral_leaderboard(
+            self.db, limit=10, days=30, sort_by="posted_at", sort_order="desc"
+        )
+        newest_dates = [item["posted_at"] for item in newest_first]
+        self.assertEqual(newest_dates, sorted(newest_dates, reverse=True))
+
     def test_get_competitor_comparison(self):
         comp = get_competitor_comparison(self.db, days=30, topic="pendirian pt")
         self.assertEqual(comp["brand_performance"]["posts_count"], 2)
