@@ -77,6 +77,37 @@ Domain ini melayani dashboard analitik (`/analytics`), panel chat "Tanya AI" yan
 langsung di halaman yang sama, dan seluruh REST API backend — tidak ada domain/container
 terpisah yang perlu dikonfigurasi lagi.
 
+### ⚠️ Peringatan: Deploy Manual via SSH/Git Bisa Menghapus Label Traefik
+
+Dokploy TIDAK menyimpan label Traefik (`traefik.enable`, `traefik.http.routers.*`, dll.) di
+repo git — label-label itu di-generate dari konfigurasi domain yang tersimpan di database
+Dokploy sendiri (Postgres, tabel `domain`), lalu disuntikkan langsung ke file
+`docker-compose.yml` di server (`/etc/dokploy/compose/<service>/code/docker-compose.yml`)
+HANYA saat Anda klik tombol **Deploy** di UI Dokploy (atau memicu deploy lewat API Dokploy).
+File itu sengaja TIDAK di-commit ke git — jadi `git status` di server akan selalu menunjukkan
+`docker-compose.yml` sebagai "modified" dibanding versi git, dan itu normal.
+
+Jika Anda (atau AI agent) melakukan deploy manual via SSH dengan `git fetch` + `git reset --hard`
+langsung di server (bypass Dokploy UI) untuk menarik commit terbaru lebih cepat, **`git reset --hard`
+akan menghapus label Traefik yang disuntikkan Dokploy tadi**, karena label itu hanya ada di
+working tree, bukan di git history. Container tetap jalan sehat dan bisa diakses langsung lewat
+`http://<ip-vps>:8000`, tapi domain custom (mis. `sosmed.domainanda.com`) akan langsung 404
+karena Traefik tidak lagi tahu cara route domain tersebut ke container.
+
+**Cara memperbaiki tanpa Dokploy UI**: cukup restore ulang blok `labels:` dan `networks:`
+(`dokploy-network`, `default`) pada `docker-compose.yml` di server persis seperti sebelum
+di-reset, lalu jalankan ulang `docker compose up -d` (tidak perlu rebuild) supaya container
+direcreate dengan label barunya — Traefik akan langsung mendeteksi lewat Docker provider-nya
+(watch-mode, tidak perlu restart Traefik). Isi label yang benar bisa dilihat dari record domain
+di database Dokploy (`SELECT * FROM domain WHERE host = '...'`, kolom `uniqueConfigKey` dipakai
+sebagai suffix nama router) atau dari `docker inspect` container lain yang punya domain serupa.
+
+**Cara paling aman (direkomendasikan)**: setelah deploy manual via SSH, klik tombol **Redeploy**
+sekali di UI Dokploy — itu akan meregenerasi ulang `docker-compose.yml` dengan label yang benar
+dari database, tanpa perlu rebuild ulang image jika tidak ada perubahan kode. Perubahan manual
+lewat SSH TIDAK otomatis ter-detect/di-heal oleh Dokploy sampai deploy berikutnya dipicu — tidak
+ada proses reconcile background yang mengembalikan label yang hilang secara otomatis.
+
 ---
 
 ## 5. Deploy Stack
