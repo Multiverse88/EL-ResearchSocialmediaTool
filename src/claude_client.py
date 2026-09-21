@@ -138,6 +138,10 @@ class ClaudeChatHandler:
                 "reply": action_result.clarification,
             }
 
+        if is_competitor_analysis_intent(message):
+            result = self._build_competitor_analysis_fallback_result(db, message, history)
+            return self._merge_action_context(result, action_result, already_grounded=True)
+
         if not self.api_key:
             logger.info("No AI API key configured. Running local intent fallback handler.")
             return self._merge_action_context(self._local_fallback_handler(db, message), action_result)
@@ -1034,6 +1038,11 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         can render the typing/thinking animation in real time.
         Yields dicts: {"type": "reasoning"|"content", "text": str} or {"type": "error", "text": str}.
         """
+        if is_competitor_analysis_intent(user_message):
+            result = self._build_competitor_analysis_fallback_result(db, user_message, history)
+            yield {"type": "content", "text": result["reply"]}
+            return
+
         matched_topic = action_result.matched_topic if action_result else None
         account_ref = action_result.matched_account if action_result else None
         account_refs = action_result.matched_accounts if action_result else None

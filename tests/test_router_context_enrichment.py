@@ -198,12 +198,13 @@ class TestBuildRouterContextAccountMode(unittest.TestCase):
             post_url="https://instagram.com/p/competitor-fallback",
         ))
 
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": ""}):
-            result = ClaudeChatHandler(api_key="").process_chat(
+        with patch.object(self.handler, "_call_openai_router") as router:
+            result = self.handler.process_chat(
                 self.db,
                 "apa konten kompetitor id.easylegal yang views nya besar dan bisa diamati tiru dan dimodifikasi",
                 [],
             )
+        router.assert_not_called()
 
         self.assertEqual(result["tool_used"], "competitor_analysis")
         self.assertEqual(result["tools_used"], ["competitor_analysis"])
