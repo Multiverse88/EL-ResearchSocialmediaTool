@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 from src.claude_client import ClaudeChatHandler
 from src.db import Database
@@ -141,6 +142,78 @@ class TestBuildRouterContextAccountMode(unittest.TestCase):
         self.assertIn("Tanggal Post Terbaru Tersimpan:", system_content)
         self.assertIn("sinkronisasi yang berhasil tidak berarti akun menerbitkan post baru", system_content)
         self.assertIn("jangan menyatakan akun belum terdaftar atau belum di-scrape", system_content)
+
+    def test_competitor_atm_prompt_uses_competitor_posts_and_baseline(self):
+        competitor = self.db.upsert_account(Account.create(
+            platform="instagram",
+            username="smartlegalid",
+            is_own_brand=False,
+        ))
+        self.db.insert_post(Post.create(
+            account_id=competitor.id,
+            platform="instagram",
+            platform_post_id="competitor-viral",
+            caption="Jangan tunggu izin usaha bermasalah sebelum cek dokumen ini",
+            media_url="",
+            likes=450,
+            comments=35,
+            views=12000,
+            posted_at=datetime.now(timezone.utc).isoformat(),
+            post_url="https://instagram.com/p/competitor-viral",
+        ))
+
+        _, _, _, messages, matched_topic, subject_data = self.handler._build_router_context(
+            self.db,
+            "apa konten kompetitor id.easylegal yang views nya besar dan bisa diamati tiru dan dimodifikasi",
+            [],
+        )
+
+        system_content = messages[0]["content"]
+        self.assertIsNone(matched_topic)
+        self.assertEqual(subject_data["analysis_type"], "competitor_atm")
+        self.assertEqual(subject_data["metric"], "views")
+        self.assertEqual(subject_data["baseline"]["username"], "id.easylegal")
+        self.assertEqual(subject_data["top_competitor_posts"][0]["username"], "smartlegalid")
+        self.assertIn("Jangan tunggu izin usaha bermasalah", system_content)
+        self.assertIn("https://instagram.com/p/competitor-viral", system_content)
+        self.assertIn("Buat bagian AMATI", system_content)
+        self.assertIn("Buat bagian MODIFIKASI", system_content)
+
+    def test_competitor_atm_local_fallback_returns_grounded_comparison(self):
+        competitor = self.db.upsert_account(Account.create(
+            platform="instagram",
+            username="smartlegalid",
+            is_own_brand=False,
+        ))
+        self.db.insert_post(Post.create(
+            account_id=competitor.id,
+            platform="instagram",
+            platform_post_id="competitor-fallback",
+            caption="Cek dokumen legal ini sebelum bisnis mulai beroperasi",
+            media_url="",
+            likes=450,
+            comments=35,
+            views=12000,
+            posted_at=datetime.now(timezone.utc).isoformat(),
+            post_url="https://instagram.com/p/competitor-fallback",
+        ))
+
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": ""}):
+            result = ClaudeChatHandler(api_key="").process_chat(
+                self.db,
+                "apa konten kompetitor id.easylegal yang views nya besar dan bisa diamati tiru dan dimodifikasi",
+                [],
+            )
+
+        self.assertEqual(result["tool_used"], "competitor_analysis")
+        self.assertEqual(result["tools_used"], ["competitor_analysis"])
+        self.assertIn("**KOMPARASI**", result["reply"])
+        self.assertIn("**AMATI**", result["reply"])
+        self.assertIn("**TIRU**", result["reply"])
+        self.assertIn("**MODIFIKASI", result["reply"])
+        self.assertIn("12,000", result["reply"])
+        self.assertIn("https://instagram.com/p/competitor-fallback", result["reply"])
+        self.assertEqual(result["action_receipts"], [])
 
     def test_account_mode_does_not_invoke_topic_keyword_resolution(self):
         with patch.object(self.handler, "_resolve_matched_topic") as mock_resolve, \

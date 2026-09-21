@@ -754,6 +754,25 @@ def api_analytics_competitor_leaderboard(
     return {"status": "success", "count": len(data), "data": data}
 
 
+@app.get("/api/analytics/competitor-posts")
+def api_analytics_competitor_posts(
+    username: str = Query(..., min_length=1, max_length=100),
+    platform: str = Query(..., pattern="^(instagram|tiktok|threads)$"),
+    days: Optional[int] = Query(None, ge=1, le=3650),
+    limit: int = Query(100, ge=1, le=100),
+):
+    """Returns posting details for one competitor account."""
+    from .analytics import get_competitor_posts
+    data = get_competitor_posts(
+        get_db(),
+        username=username,
+        platform=platform,
+        days=days,
+        limit=limit,
+    )
+    return {"status": "success", "data": data}
+
+
 @app.get("/api/analytics/data-health")
 def api_analytics_data_health():
     """Returns per own-brand account: post count, % of posts with complete view-count data, last sync."""

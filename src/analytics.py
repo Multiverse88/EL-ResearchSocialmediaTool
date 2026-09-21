@@ -790,6 +790,208 @@ def get_competitor_leaderboard(db: Database, days: Optional[int] = None, limit: 
     ]
 
 
+def get_competitor_posts(
+    db: Database,
+    username: str,
+    platform: str,
+    days: Optional[int] = None,
+    limit: int = 100,
+) -> Dict[str, Any]:
+    """Returns newest stored posts for one competitor account, never an own-brand account."""
+    normalized_username = username.strip().lower().lstrip("@")
+    normalized_platform = platform.strip().lower()
+    where = """
+        WHERE a.is_own_brand = 0
+          AND LOWER(a.username) = ?
+          AND LOWER(a.platform) = ?
+    """
+    params: List[Any] = [normalized_username, normalized_platform]
+    if days:
+        where += " AND p.posted_at >= ?"
+        params.append(_get_cutoff_iso(days))
+
+    total_row = db.conn.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {where}
+        """,
+        params,
+    ).fetchone()
+    total = int(total_row[0] if total_row else 0)
+
+    rows = db.conn.execute(
+        f"""
+        SELECT p.id, p.platform_post_id, p.caption, p.posted_at,
+               p.likes, p.comments, p.views, p.post_url
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {where}
+        ORDER BY p.posted_at DESC, p.id DESC
+        LIMIT ?
+        """,
+        [*params, limit],
+    ).fetchall()
+    posts = [
+        {
+            "id": row[0],
+            "platform_post_id": row[1],
+            "caption": row[2] or "",
+            "posted_at": row[3],
+            "likes": row[4] or 0,
+            "comments": row[5] or 0,
+            "views": row[6],
+            "post_url": row[7] or "",
+        }
+        for row in rows
+    ]
+    return {
+        "username": normalized_username,
+        "platform": normalized_platform,
+        "total": total,
+        "count": len(posts),
+        "truncated": total > len(posts),
+        "posts": posts,
+    }
+
+
+
+def get_competitor_analysis_dataset(
+    db: Database,
+    baseline_username: Optional[str] = None,
+    platform: Optional[str] = None,
+    metric: str = "engagement",
+    days: int = 3650,
+    limit: int = 12,
+) -> Dict[str, Any]:
+    """Builds factual own-brand vs competitor evidence for comparison and ATM analysis."""
+    normalized_username = baseline_username.strip().lower().lstrip("@") if baseline_username else None
+    normalized_platform = platform.strip().lower() if platform else None
+    normalized_metric = metric if metric in {"views", "likes", "comments", "engagement"} else "engagement"
+    metric_sql = {
+        "views": "COALESCE(p.views, 0)",
+        "likes": "COALESCE(p.likes, 0)",
+        "comments": "COALESCE(p.comments, 0)",
+        "engagement": "(COALESCE(p.likes, 0) + COALESCE(p.comments, 0))",
+    }[normalized_metric]
+    account_metric_sql = {
+        "views": "COALESCE(SUM(p.views), 0)",
+        "likes": "COALESCE(SUM(p.likes), 0)",
+        "comments": "COALESCE(SUM(p.comments), 0)",
+        "engagement": "(COALESCE(SUM(p.likes), 0) + COALESCE(SUM(p.comments), 0))",
+    }[normalized_metric]
+    cutoff = _get_cutoff_iso(days)
+
+    def post_rows(is_own_brand: int, username: Optional[str], row_limit: int) -> List[Dict[str, Any]]:
+        where = "WHERE a.is_own_brand = ? AND p.posted_at >= ?"
+        params: List[Any] = [is_own_brand, cutoff]
+        if username:
+            where += " AND LOWER(a.username) = ?"
+            params.append(username)
+        if normalized_platform:
+            where += " AND LOWER(a.platform) = ?"
+            params.append(normalized_platform)
+        rows = db.conn.execute(
+            f"""
+            SELECT a.username, a.platform, p.caption, p.posted_at,
+                   p.likes, p.comments, p.views, p.post_url
+            FROM posts p
+            JOIN accounts a ON p.account_id = a.id
+            {where}
+            ORDER BY {metric_sql} DESC,
+                     (COALESCE(p.likes, 0) + COALESCE(p.comments, 0)) DESC,
+                     p.posted_at DESC
+            LIMIT ?
+            """,
+            [*params, row_limit],
+        ).fetchall()
+        return [
+            {
+                "username": row[0],
+                "platform": row[1],
+                "caption": row[2] or "",
+                "posted_at": row[3],
+                "likes": row[4] or 0,
+                "comments": row[5] or 0,
+                "views": row[6],
+                "post_url": row[7] or "",
+            }
+            for row in rows
+        ]
+
+    baseline_where = "WHERE a.is_own_brand = 1 AND p.posted_at >= ?"
+    baseline_params: List[Any] = [cutoff]
+    if normalized_username:
+        baseline_where += " AND LOWER(a.username) = ?"
+        baseline_params.append(normalized_username)
+    if normalized_platform:
+        baseline_where += " AND LOWER(a.platform) = ?"
+        baseline_params.append(normalized_platform)
+    baseline_row = db.conn.execute(
+        f"""
+        SELECT COUNT(*), COALESCE(SUM(p.likes), 0), COALESCE(SUM(p.comments), 0),
+               COALESCE(SUM(p.views), 0), MAX(p.posted_at)
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {baseline_where}
+        """,
+        baseline_params,
+    ).fetchone()
+    baseline_summary = {
+        "post_count": baseline_row[0] if baseline_row else 0,
+        "total_likes": baseline_row[1] if baseline_row else 0,
+        "total_comments": baseline_row[2] if baseline_row else 0,
+        "total_views": baseline_row[3] if baseline_row else 0,
+        "latest_post": baseline_row[4] if baseline_row else None,
+    }
+
+    competitor_where = "WHERE a.is_own_brand = 0 AND p.posted_at >= ?"
+    competitor_params: List[Any] = [cutoff]
+    if normalized_platform:
+        competitor_where += " AND LOWER(a.platform) = ?"
+        competitor_params.append(normalized_platform)
+    account_rows = db.conn.execute(
+        f"""
+        SELECT a.username, a.platform, COUNT(*),
+               COALESCE(SUM(p.likes), 0), COALESCE(SUM(p.comments), 0),
+               COALESCE(SUM(p.views), 0)
+        FROM posts p
+        JOIN accounts a ON p.account_id = a.id
+        {competitor_where}
+        GROUP BY a.username, a.platform
+        ORDER BY {account_metric_sql} DESC,
+                 (COALESCE(SUM(p.likes), 0) + COALESCE(SUM(p.comments), 0)) DESC
+        LIMIT 8
+        """,
+        competitor_params,
+    ).fetchall()
+    competitor_accounts = [
+        {
+            "username": row[0],
+            "platform": row[1],
+            "post_count": row[2],
+            "total_likes": row[3],
+            "total_comments": row[4],
+            "total_views": row[5],
+        }
+        for row in account_rows
+    ]
+
+    return {
+        "analysis_type": "competitor_atm",
+        "metric": normalized_metric,
+        "period_days": days,
+        "platform": normalized_platform or "all",
+        "baseline": {
+            "username": normalized_username or "easycorp",
+            "summary": baseline_summary,
+            "top_posts": post_rows(1, normalized_username, 5),
+        },
+        "competitor_accounts": competitor_accounts,
+        "top_competitor_posts": post_rows(0, None, limit),
+    }
+
 def get_data_health(db: Database) -> List[Dict[str, Any]]:
     """Per own-brand account: how much of its stored data is actually complete (views
     field populated) and when it last successfully synced — surfaces scraping gaps

@@ -182,6 +182,25 @@ _ACTION_INTENT_RE = re.compile(
     rf"\bprofil(?:e)?\s+(?:di\s+)?{_PLATFORM_WORD}\b",
     re.IGNORECASE,
 )
+_COMPETITOR_TERM_RE = re.compile(r"\b(kompetitor|competitor)\b", re.IGNORECASE)
+_COMPETITOR_ANALYSIS_RE = re.compile(
+    r"\b(konten|postingan?|performa|views?|tayangan|likes?|komentar|interaksi|engagement|"
+    r"bandingkan|komparasi|benchmark|terbaik|terbesar|atm|amati|tiru|modifikasi)\b",
+    re.IGNORECASE,
+)
+
+
+def is_competitor_analysis_intent(message: str) -> bool:
+    """True for read-only competitor comparison/ATM questions, not monitoring commands."""
+    return bool(
+        _COMPETITOR_TERM_RE.search(message)
+        and _COMPETITOR_ANALYSIS_RE.search(message)
+        and not _MONITOR_RE.search(message)
+        and not _REPLACE_RE.search(message)
+        and not _STOP_MONITOR_RE.search(message)
+    )
+
+
 
 
 def has_action_intent(message: str) -> bool:
@@ -845,6 +864,9 @@ class ChatActionOrchestrator:
         planner: Optional[PlannerFn] = None,
         progress_callback: ProgressCallback = None,
     ) -> ActionExecutionResult:
+        if is_competitor_analysis_intent(message):
+            return _empty_result()
+
         plan = parse_deterministic(db, message)
 
         if plan is None and planner is not None and has_action_intent(message):

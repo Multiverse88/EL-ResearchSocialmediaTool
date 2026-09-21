@@ -12,7 +12,7 @@ import anthropic
 import httpx
 from .db import Database
 from .tools import CLAUDE_TOOLS_SPEC, execute_claude_tool
-from .chat_actions import resolve_account_reference
+from .chat_actions import is_competitor_analysis_intent, resolve_account_reference
 logger = logging.getLogger("backend.claude")
 
 DEFAULT_SYSTEM_PROMPT = """
@@ -579,6 +579,239 @@ Postingan dengan Likes Tertinggi:
         subject_label = "perbandingan akun " + " vs ".join(usernames)
         return context_text, subject_label
 
+    def _build_competitor_analysis_context_text(
+        self,
+        db: Database,
+        user_message: str,
+        history: List[Dict[str, Any]],
+    ) -> Tuple[str, str, Dict[str, Any]]:
+        """Builds factual competitor comparison evidence and explicit ATM instructions."""
+        msg_lower = user_message.lower()
+        metric = "engagement"
+        if re.search(r"\b(views?|tayangan|jangkauan)\b", msg_lower):
+            metric = "views"
+        elif re.search(r"\blikes?\b", msg_lower):
+            metric = "likes"
+        elif re.search(r"\bkomentar\b", msg_lower):
+            metric = "comments"
+
+        platform = None
+        if "instagram" in msg_lower or re.search(r"\big\b", msg_lower):
+            platform = "instagram"
+        elif "tiktok" in msg_lower:
+            platform = "tiktok"
+        elif "threads" in msg_lower:
+            platform = "threads"
+
+        days = 3650
+        if "hari ini" in msg_lower:
+            days = 1
+        elif "kemarin" in msg_lower:
+            days = 2
+        elif re.search(r"\bminggu\b", msg_lower):
+            days = 7
+        elif re.search(r"\bbulan\b", msg_lower):
+            days = 30
+
+        baseline_username = None
+        account_ref = self._resolve_conversation_account(db, user_message, history)
+        if account_ref:
+            baseline_username = account_ref[1]
+        else:
+            brand_aliases = {
+                "easylegal": "id.easylegal",
+                "easytax": "id.easytax",
+                "easyoffice": "id.easyoffice",
+            }
+            for brand, username in brand_aliases.items():
+                if brand in msg_lower:
+                    baseline_username = username
+                    break
+
+        from .analytics import get_competitor_analysis_dataset
+        data = get_competitor_analysis_dataset(
+            db,
+            baseline_username=baseline_username,
+            platform=platform,
+            metric=metric,
+            days=days,
+            limit=12,
+        )
+        baseline = data["baseline"]
+        summary = baseline["summary"]
+        subject_label = (
+            f"komparasi kompetitor terhadap @{baseline_username}"
+            if baseline_username
+            else "komparasi kompetitor terhadap seluruh brand EasyCorp"
+        )
+        text = f"""
+[DATA FAKTUAL KOMPARASI KOMPETITOR + ATM]:
+Baseline: @{baseline['username']}
+Platform: {data['platform']}
+Periode: {data['period_days']} hari terakhir
+Metrik ranking yang diminta: {data['metric']}
+
+Ringkasan Baseline:
+- Total post: {summary['post_count']}
+- Total views: {summary['total_views']}
+- Total likes: {summary['total_likes']}
+- Total komentar: {summary['total_comments']}
+- Post terbaru: {summary['latest_post'] or 'tidak tersedia'}
+
+Peringkat Akun Kompetitor:
+"""
+        if data["competitor_accounts"]:
+            for idx, account in enumerate(data["competitor_accounts"], 1):
+                text += (
+                    f"{idx}. @{account['username']} [{account['platform']}]: "
+                    f"{account['post_count']} post, {account['total_views']} views, "
+                    f"{account['total_likes']} likes, {account['total_comments']} komentar\n"
+                )
+        else:
+            text += "(Tidak ada akun kompetitor yang cocok dengan filter.)\n"
+
+        text += "\nPostingan Kompetitor Terbaik Berdasarkan Metrik Permintaan:\n"
+        if data["top_competitor_posts"]:
+            for idx, post in enumerate(data["top_competitor_posts"], 1):
+                views = post["views"] if post["views"] is not None else "tidak tersedia"
+                link = post["post_url"] or "tidak tersedia"
+                text += (
+                    f"{idx}. @{post['username']} [{post['platform']}], diposting {post['posted_at']}: "
+                    f"\"{post['caption'][:240]}\" | Views: {views}, Likes: {post['likes']}, "
+                    f"Komentar: {post['comments']}, Link: {link}\n"
+                )
+        else:
+            text += "(Tidak ada postingan kompetitor yang cocok dengan filter.)\n"
+
+        text += "\nPostingan Baseline Terbaik untuk Pembanding:\n"
+        if baseline["top_posts"]:
+            for idx, post in enumerate(baseline["top_posts"], 1):
+                views = post["views"] if post["views"] is not None else "tidak tersedia"
+                link = post["post_url"] or "tidak tersedia"
+                text += (
+                    f"{idx}. @{post['username']} [{post['platform']}], diposting {post['posted_at']}: "
+                    f"\"{post['caption'][:200]}\" | Views: {views}, Likes: {post['likes']}, "
+                    f"Komentar: {post['comments']}, Link: {link}\n"
+                )
+        else:
+            text += "(Tidak ada postingan baseline yang cocok dengan filter.)\n"
+
+        text += """
+[INSTRUKSI JAWABAN KOMPARASI + ATM]:
+- Mulai dengan komparasi angka baseline vs kompetitor dari data di atas.
+- Pilih postingan kompetitor yang paling relevan berdasarkan metrik permintaan user.
+- Buat bagian AMATI: pola hook, format, topik, struktur caption, dan CTA yang terlihat dari bukti.
+- Buat bagian TIRU: prinsip yang layak diadopsi, bukan menyalin caption atau identitas kompetitor.
+- Buat bagian MODIFIKASI: minimal 3 konsep yang disesuaikan untuk baseline, masing-masing dengan hook baru.
+- Sertakan akun, angka, tanggal, dan link yang tersedia. Jangan mengarang link atau metrik kosong.
+- Jika daftar kompetitor di atas berisi data, jangan pernah mengatakan data kompetitor belum tersedia.
+"""
+        return text, subject_label, data
+
+    def _build_competitor_analysis_fallback_result(
+        self,
+        db: Database,
+        user_message: str,
+        history: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Returns a factual ATM answer when the configured AI router is unavailable."""
+        _, _, data = self._build_competitor_analysis_context_text(db, user_message, history)
+        baseline = data["baseline"]
+        summary = baseline["summary"]
+        metric = data["metric"]
+        metric_labels = {
+            "views": "views",
+            "likes": "likes",
+            "comments": "komentar",
+            "engagement": "likes + komentar",
+        }
+
+        comparison_lines = [
+            f"- Baseline **@{baseline['username']}**: {summary['post_count']} post, "
+            f"{summary['total_views']:,} views, {summary['total_likes']:,} likes, "
+            f"{summary['total_comments']:,} komentar."
+        ]
+        for account in data["competitor_accounts"][:5]:
+            comparison_lines.append(
+                f"- **@{account['username']}** ({account['platform']}): "
+                f"{account['post_count']} post, {account['total_views']:,} views, "
+                f"{account['total_likes']:,} likes, {account['total_comments']:,} komentar."
+            )
+
+        posts = data["top_competitor_posts"][:3]
+        if not posts:
+            reply = (
+                "**KOMPARASI**\n"
+                + "\n".join(comparison_lines)
+                + "\n\nBelum ada postingan kompetitor yang cocok dengan platform dan periode "
+                  "permintaan. Analisis ATM tidak dibuat agar caption, metrik, atau tautan tidak "
+                  "direkayasa."
+            )
+        else:
+            metric_note = ""
+            if metric == "views" and not any(post["views"] is not None for post in posts):
+                metric_note = (
+                    "\n- Data views kompetitor belum tersedia. Urutan contoh di bawah memakai "
+                    "likes + komentar sebagai pembeda sekunder, bukan bukti views terbesar."
+                )
+
+            observed_lines = []
+            for index, post in enumerate(posts, 1):
+                views = f"{post['views']:,}" if post["views"] is not None else "tidak tersedia"
+                link = f"\n  Link: {post['post_url']}" if post["post_url"] else "\n  Link: tidak tersedia"
+                caption = post["caption"].strip() or "(caption kosong)"
+                observed_lines.append(
+                    f"{index}. **@{post['username']}** — \"{caption[:220]}\"\n"
+                    f"   {post['posted_at']} · views {views} · {post['likes']:,} likes · "
+                    f"{post['comments']:,} komentar{link}"
+                )
+
+            focus_by_brand = {
+                "id.easylegal": "legalitas dan kepatuhan bisnis",
+                "id.easytax": "pajak dan kepatuhan fiskal",
+                "id.easyoffice": "ruang kerja dan operasional bisnis",
+            }
+            focus = focus_by_brand.get(baseline["username"], "solusi bisnis EasyCorp")
+            reply = (
+                f"**KOMPARASI** — diurutkan berdasarkan {metric_labels[metric]}\n"
+                + "\n".join(comparison_lines)
+                + metric_note
+                + "\n\n**AMATI**\n"
+                + "\n".join(observed_lines)
+                + "\n\n**TIRU**\n"
+                  "- Adopsi prinsip hook masalah sebelum solusi; jangan menyalin caption atau "
+                  "identitas visual kompetitor.\n"
+                  "- Pertahankan satu masalah utama per post, bukti yang mudah dipindai, lalu CTA "
+                  "yang spesifik.\n"
+                  "- Uji format dan struktur dari contoh teratas terhadap baseline; angka di atas "
+                  "adalah hasil tersimpan, bukan jaminan performa berikutnya.\n\n"
+                  f"**MODIFIKASI untuk @{baseline['username']}**\n"
+                  f"1. Hook: “Sebelum mengurus {focus}, cek 3 risiko ini.” Format: carousel "
+                  "checklist; CTA: simpan sebagai panduan.\n"
+                  f"2. Hook: “Kesalahan {focus} yang terlihat sepele tetapi paling sering "
+                  "menghambat bisnis.” Format: video singkat masalah → dampak → solusi.\n"
+                  f"3. Hook: “Sudah yakin {focus} bisnis Anda aman?” Format: audit mandiri "
+                  "3 pertanyaan; CTA: komentari bagian yang paling membingungkan."
+            )
+
+        return {
+            "status": "success",
+            "user_query": user_message,
+            "tool_used": "competitor_analysis",
+            "tools_used": ["competitor_analysis"],
+            "tool_results": [{
+                "tool": "competitor_analysis",
+                "input": {
+                    "baseline_username": baseline["username"],
+                    "platform": data["platform"],
+                    "metric": metric,
+                    "period_days": data["period_days"],
+                },
+                "output": data,
+            }],
+            "reply": reply,
+        }
+
     def _build_router_context(
         self,
         db: Database,
@@ -603,9 +836,14 @@ Postingan dengan Likes Tertinggi:
         instead — topic-keyword resolution never runs, so an unrelated word extracted
         from the sentence can't silently filter the account's own data.
         """
-        if account_refs and len(account_refs) >= 2:
+        if is_competitor_analysis_intent(user_message):
+            context_text, subject_label, subject_data = self._build_competitor_analysis_context_text(
+                db, user_message, history,
+            )
+            matched_topic = None
+        elif account_refs and len(account_refs) >= 2:
             context_text, subject_label = self._build_multi_account_context_text(db, account_refs)
-            subject_data: Dict[str, Any] = {
+            subject_data = {
                 "accounts": [{"platform": p, "username": u} for p, u in account_refs],
             }
         else:
@@ -771,13 +1009,21 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         final_reply = visible_content or full_content.strip() or reasoning.strip()
         if not final_reply:
             return self._local_fallback_handler(db, user_message)
-
+        is_competitor_analysis = (
+            isinstance(topic_data, dict)
+            and topic_data.get("analysis_type") == "competitor_atm"
+        )
+        tool_name = "competitor_analysis" if is_competitor_analysis else "research_topic"
         return {
             "status": "success",
             "user_query": user_message,
             "model": target_model,
-            "tool_used": "research_topic",
-            "tool_results": [{"tool": "research_topic", "topic": matched_topic, "data": topic_data}],
+            "tool_used": tool_name,
+            "tool_results": [{
+                "tool": tool_name,
+                "topic": matched_topic,
+                "data": topic_data,
+            }],
             "reply": final_reply,
         }
 
@@ -862,7 +1108,13 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 
         system_prompt = DEFAULT_SYSTEM_PROMPT
         extra_context = ""
-        if action_result:
+        is_competitor_analysis = is_competitor_analysis_intent(user_message)
+        if is_competitor_analysis:
+            competitor_text, _, _ = self._build_competitor_analysis_context_text(
+                db, user_message, history,
+            )
+            extra_context = f"\n\n{competitor_text}"
+        elif action_result:
             if action_result.matched_accounts and len(action_result.matched_accounts) >= 2:
                 multi_text, _ = self._build_multi_account_context_text(db, action_result.matched_accounts)
                 extra_context += f"\n\n{multi_text}"
@@ -871,13 +1123,40 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         if extra_context:
             system_prompt = f"{DEFAULT_SYSTEM_PROMPT}{extra_context}"
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1500,
-            system=system_prompt,
-            messages=messages,
-            tools=CLAUDE_TOOLS_SPEC,
-        )
+        request_kwargs = {
+            "model": self.model,
+            "max_tokens": 1500,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if not is_competitor_analysis:
+            request_kwargs["tools"] = CLAUDE_TOOLS_SPEC
+        response = self.client.messages.create(**request_kwargs)
+
+        if is_competitor_analysis:
+            final_text = "".join(
+                block.text for block in response.content if block.type == "text"
+            ).strip()
+            if not final_text:
+                return self._build_competitor_analysis_fallback_result(
+                    db, user_message, history,
+                )
+            _, _, data = self._build_competitor_analysis_context_text(
+                db, user_message, history,
+            )
+            return {
+                "status": "success",
+                "user_query": user_message,
+                "model": self.model,
+                "tool_used": "competitor_analysis",
+                "tools_used": ["competitor_analysis"],
+                "tool_results": [{
+                    "tool": "competitor_analysis",
+                    "input": {"metric": data["metric"], "platform": data["platform"]},
+                    "output": data,
+                }],
+                "reply": final_text,
+            }
 
         if response.stop_reason == "tool_use":
             tool_calls = [block for block in response.content if block.type == "tool_use"]
@@ -949,6 +1228,9 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         accounts = db.list_accounts()
 
         # 1. Compare Topics Intent
+        if is_competitor_analysis_intent(message):
+            return self._build_competitor_analysis_fallback_result(db, message, [])
+
         if any(w in msg_lower for w in ["bandingkan topik", "bandingkan kata kunci", "compare topik", "vs", "versus"]):
             found_topics = [t for t in self._resolve_topics(db) if t in msg_lower]
             if len(found_topics) < 2:

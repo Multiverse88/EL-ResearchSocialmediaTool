@@ -327,7 +327,7 @@ class TestAnalyticsEngine(unittest.TestCase):
         self.assertNotIn("#pendirianpt", tags)
 
     def test_get_competitor_leaderboard(self):
-        from src.analytics import get_competitor_leaderboard
+        from src.analytics import get_competitor_leaderboard, get_competitor_posts
         acc_comp2 = self.db.upsert_account(
             Account.create(platform="instagram", username="another_competitor", is_own_brand=False)
         )
@@ -342,6 +342,41 @@ class TestAnalyticsEngine(unittest.TestCase):
         self.assertIn("another_competitor", usernames)
         # legal_competitor has far higher engagement (500+80 vs 5+1) -> ranked first
         self.assertEqual(leaderboard[0]["username"], "legal_competitor")
+
+        details = get_competitor_posts(
+            self.db,
+            username="legal_competitor",
+            platform="instagram",
+            days=3650,
+        )
+        self.assertEqual(details["total"], 2)
+        self.assertEqual(details["count"], 2)
+        self.assertFalse(details["truncated"])
+        self.assertEqual(
+            [post["platform_post_id"] for post in details["posts"]],
+            ["post-c1", "post-c2_old"],
+        )
+        self.assertEqual(details["posts"][0]["caption"], "Jangan bikin PT sebelum nonton video ini! Banyak yang salah pilih KBLI!")
+        self.assertEqual(details["posts"][0]["post_url"], "https://instagram.com/p/c1")
+
+        limited = get_competitor_posts(
+            self.db,
+            username="legal_competitor",
+            platform="instagram",
+            days=3650,
+            limit=1,
+        )
+        self.assertEqual(limited["count"], 1)
+        self.assertTrue(limited["truncated"])
+
+        own_brand = get_competitor_posts(
+            self.db,
+            username="id.easylegal",
+            platform="instagram",
+            days=3650,
+        )
+        self.assertEqual(own_brand["total"], 0)
+        self.assertEqual(own_brand["posts"], [])
 
     def test_get_data_health(self):
         from src.analytics import get_data_health

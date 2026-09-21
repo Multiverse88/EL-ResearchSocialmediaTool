@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from src.chat_actions import ChatActionOrchestrator
+from src.chat_actions import ChatActionOrchestrator, is_competitor_analysis_intent
 from src.db import Database
 from src.models import Account, Post
 import src.scrapers.instagram as ig_module
@@ -135,6 +135,41 @@ class TestScrapeProfile(unittest.TestCase):
         self.assertEqual(result.matched_account, ("instagram", "id.easylegal"))
         self.assertEqual(len(result.receipts), 1)
         self.assertTrue(result.receipts[0].used_cache)
+
+    def test_competitor_atm_request_does_not_scrape_own_brand_profile(self):
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        own = self.db.upsert_account(Account.create(
+            platform="instagram",
+            username="id.easylegal",
+            is_own_brand=True,
+            monitoring_enabled=True,
+        ))
+        _seed_post(self.db, own, recent)
+
+        with patch.object(ig_module, "scrape_instagram_profile") as mock_scrape:
+            result = self.orch.plan_and_execute(
+                self.db,
+                "apa konten kompetitor id.easylegal yang views nya besar dan bisa diamati tiru dan dimodifikasi",
+                [],
+            )
+
+        mock_scrape.assert_not_called()
+        self.assertEqual(result.receipts, [])
+        self.assertIsNone(result.matched_account)
+
+    def test_competitor_analysis_intent_accepts_natural_language_variants(self):
+        positive = [
+            "Bandingkan performa kompetitor dengan EasyTax",
+            "ATM postingan competitor yang likes-nya paling tinggi",
+            "Konten kompetitor mana yang views terbesar?",
+            "Buat komparasi dan modifikasi ide dari kompetitor EasyOffice",
+        ]
+        for message in positive:
+            with self.subTest(message=message):
+                self.assertTrue(is_competitor_analysis_intent(message))
+
+        self.assertFalse(is_competitor_analysis_intent("monitor akun kompetitor baru"))
+        self.assertFalse(is_competitor_analysis_intent("ganti akun kompetitor menjadi @baru"))
 
     def test_generic_pronoun_after_akun_platform_does_not_misfire(self):
         # "akun tiktok kami" — no real username present, must not scrape a literal

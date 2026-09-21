@@ -66,6 +66,16 @@
   <!-- Main Container (Matching EasyLegal Analytics.tsx) -->
   <main class="p-6 max-w-7xl mx-auto space-y-6">
 
+    <div id="dashboard-loading" class="fixed inset-x-0 bottom-0 top-16 z-20 flex items-center justify-center bg-gray-50/95 backdrop-blur-sm transition-opacity duration-200" role="status" aria-live="polite" aria-hidden="false">
+      <div class="flex flex-col items-center gap-4 rounded-2xl border border-gray-100 bg-white px-8 py-7 shadow-lg">
+        <div class="h-10 w-10 animate-spin rounded-full border-4 border-red-100 border-t-red-600"></div>
+        <div class="text-center">
+          <p id="dashboard-loading-label" class="text-sm font-bold text-gray-800">Memuat data dashboard...</p>
+          <p class="mt-1 text-xs text-gray-400">Menyiapkan kartu, grafik, dan tabel terbaru</p>
+        </div>
+      </div>
+    </div>
+
     <!-- 1. Top Bar & Global Filters Card (EasyLegal Style) -->
     <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -488,7 +498,7 @@
       </div>
 
       <!-- Section: Hashtag Terbaik & Papan Peringkat Kompetitor -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
           <div>
             <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
@@ -502,15 +512,15 @@
           </div>
         </div>
 
-        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3 lg:col-span-2">
           <div>
             <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
               <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
               Papan Peringkat Kompetitor
             </h2>
-            <p class="text-xs text-gray-500">Kompetitor individual berdasarkan total interaksi (semua waktu)</p>
+            <p class="text-xs text-gray-500">Buka setiap akun untuk melihat caption, waktu posting, metrik, dan tautan postingan aslinya</p>
           </div>
-          <div id="competitor-leaderboard" class="space-y-1.5">
+          <div id="competitor-leaderboard" class="overflow-x-auto">
             <div class="text-center text-gray-400 text-xs py-4">Memuat data...</div>
           </div>
         </div>
@@ -563,6 +573,7 @@
     let currentGranularity = 'day';
     let currentRadarSortBy = 'performance';
     let currentRadarSortOrder = 'desc';
+    let dashboardLoadGeneration = 0;
     let waveChart = null;
     let topicBarChart = null;
 
@@ -673,21 +684,55 @@
         weekBtn.classList.add('granularity-active');
         dayBtn.classList.remove('granularity-active');
       }
-      loadBrandStats();
+      loadBrandStatsWithLoading();
+    }
+
+    function setDashboardLoading(isLoading, label = 'Memuat data dashboard...') {
+      const overlay = document.getElementById('dashboard-loading');
+      const labelEl = document.getElementById('dashboard-loading-label');
+      labelEl.textContent = label;
+      overlay.classList.toggle('hidden', !isLoading);
+      overlay.setAttribute('aria-hidden', String(!isLoading));
+    }
+
+    function dashboardLoadingLabel() {
+      const brandLabels = {
+        all: 'semua brand EasyCorp',
+        easylegal: 'EasyLegal',
+        easytax: 'EasyTax',
+        easyoffice: 'EasyOffice',
+      };
+      return `Memuat data ${brandLabels[currentBrand] || 'dashboard'}...`;
+    }
+
+    async function loadBrandStatsWithLoading() {
+      const generation = ++dashboardLoadGeneration;
+      setDashboardLoading(true, dashboardLoadingLabel());
+      try {
+        await loadBrandStats();
+      } finally {
+        if (generation === dashboardLoadGeneration) setDashboardLoading(false);
+      }
     }
 
     async function loadAllData() {
-      await Promise.all([
-        loadBrandStats(),
-        loadTopicBarChart(),
-        loadPostsRadar(),
-        loadContentFormatBreakdown(),
-        loadPostingCadence(),
-        loadBestPostingTime(),
-        loadHashtagLeaderboard(),
-        loadCompetitorLeaderboard(),
-        loadDataHealth(),
-      ]);
+      const generation = ++dashboardLoadGeneration;
+      setDashboardLoading(true, dashboardLoadingLabel());
+      try {
+        await Promise.all([
+          loadBrandStats(),
+          loadTopicBarChart(),
+          loadPostsRadar(),
+          loadContentFormatBreakdown(),
+          loadPostingCadence(),
+          loadBestPostingTime(),
+          loadHashtagLeaderboard(),
+          loadCompetitorLeaderboard(),
+          loadDataHealth(),
+        ]);
+      } finally {
+        if (generation === dashboardLoadGeneration) setDashboardLoading(false);
+      }
     }
 
     async function loadBrandStats() {
@@ -1135,6 +1180,90 @@
       }
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+      })[char]);
+    }
+
+    function renderCompetitorPostLink(value) {
+      if (!value) return '<span class="text-gray-400">Link tidak tersedia</span>';
+      try {
+        const url = new URL(value);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+        return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer" class="font-semibold text-red-600 hover:text-red-700 whitespace-nowrap">Buka Postingan ↗</a>`;
+      } catch (_) {
+        return '<span class="text-gray-400">Link tidak tersedia</span>';
+      }
+    }
+
+    async function toggleCompetitorPosts(button) {
+      const detailRow = document.getElementById(`competitor-detail-${button.dataset.index}`);
+      const detailContainer = detailRow.querySelector('[data-detail-content]');
+      const isOpening = detailRow.classList.contains('hidden');
+      detailRow.classList.toggle('hidden');
+      button.setAttribute('aria-expanded', String(isOpening));
+      button.textContent = isOpening ? 'Tutup postingan' : 'Lihat postingan';
+      if (!isOpening || detailRow.dataset.loaded === 'true') return;
+
+      detailContainer.innerHTML = '<div class="py-5 text-center text-xs text-gray-400">Memuat postingan...</div>';
+      try {
+        const params = new URLSearchParams({
+          username: button.dataset.username,
+          platform: button.dataset.platform,
+          days: '3650',
+          limit: '100',
+        });
+        const res = await fetch(`/api/analytics/competitor-posts?${params.toString()}`);
+        const json = await res.json();
+        if (json.status !== 'success') throw new Error('Respons API tidak valid');
+        const detail = json.data;
+        if (!detail.posts.length) {
+          detailContainer.innerHTML = '<div class="py-5 text-center text-xs text-gray-400">Belum ada detail postingan tersimpan.</div>';
+          detailRow.dataset.loaded = 'true';
+          return;
+        }
+
+        const truncationNote = detail.truncated
+          ? `<p class="mb-2 text-[10px] text-amber-600">Menampilkan ${detail.count} dari ${detail.total} postingan terbaru.</p>`
+          : `<p class="mb-2 text-[10px] text-gray-500">${detail.total} postingan tersimpan.</p>`;
+        detailContainer.innerHTML = `
+          ${truncationNote}
+          <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+            <table class="w-full min-w-[720px] text-xs">
+              <thead class="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th class="px-3 py-2 text-left">Caption</th>
+                  <th class="px-3 py-2 text-left whitespace-nowrap">Tanggal Posting</th>
+                  <th class="px-3 py-2 text-right">Likes</th>
+                  <th class="px-3 py-2 text-right">Komentar</th>
+                  <th class="px-3 py-2 text-center">Link</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                ${detail.posts.map((post) => `
+                  <tr class="align-top">
+                    <td class="max-w-md px-3 py-2.5 leading-relaxed text-gray-700 whitespace-pre-line">${escapeHtml(post.caption || '(Caption kosong)')}</td>
+                    <td class="px-3 py-2.5 text-gray-600 whitespace-nowrap">${formatPostingTime(post.posted_at)}</td>
+                    <td class="px-3 py-2.5 text-right font-mono text-gray-700">${Number(post.likes || 0).toLocaleString('id-ID')}</td>
+                    <td class="px-3 py-2.5 text-right font-mono text-gray-700">${Number(post.comments || 0).toLocaleString('id-ID')}</td>
+                    <td class="px-3 py-2.5 text-center">${renderCompetitorPostLink(post.post_url)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+        detailRow.dataset.loaded = 'true';
+      } catch (err) {
+        detailContainer.innerHTML = `<div class="py-5 text-center text-xs text-red-500">Gagal memuat postingan: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
     async function loadCompetitorLeaderboard() {
       const container = document.getElementById('competitor-leaderboard');
       try {
@@ -1144,19 +1273,44 @@
           container.innerHTML = '<div class="text-center text-gray-400 text-xs py-4">Belum ada data kompetitor.</div>';
           return;
         }
-        container.innerHTML = json.data.map((c, idx) => `
-          <div class="flex items-center justify-between py-1.5 ${idx > 0 ? 'border-t border-gray-50' : ''}">
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="text-[10px] font-bold text-gray-300 w-4 shrink-0">${idx + 1}</span>
-              <span class="text-xs font-bold text-gray-800 truncate">@${c.username}</span>
-              <span class="text-[9px] font-bold uppercase text-gray-400 shrink-0">${c.platform}</span>
-              <span class="text-[10px] text-gray-400 shrink-0">${c.post_count} post</span>
-            </div>
-            <span class="text-xs font-mono font-bold text-amber-600 shrink-0">${Number(c.total_engagement).toLocaleString('id-ID')}</span>
-          </div>
-        `).join('');
+        container.innerHTML = `
+          <table class="w-full min-w-[680px] text-xs">
+            <thead class="border-b border-gray-100 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              <tr>
+                <th class="py-2 pr-2 text-left">#</th>
+                <th class="py-2 pr-3 text-left">Akun</th>
+                <th class="py-2 pr-3 text-left">Platform</th>
+                <th class="py-2 pr-3 text-right">Jumlah Post</th>
+                <th class="py-2 pr-3 text-right">Total Interaksi</th>
+                <th class="py-2 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              ${json.data.map((competitor, idx) => `
+                <tr class="hover:bg-gray-50/70">
+                  <td class="py-2.5 pr-2 font-bold text-gray-300">${idx + 1}</td>
+                  <td class="py-2.5 pr-3 font-bold text-gray-800">@${escapeHtml(competitor.username)}</td>
+                  <td class="py-2.5 pr-3 text-[10px] font-bold uppercase text-gray-400">${escapeHtml(competitor.platform)}</td>
+                  <td class="py-2.5 pr-3 text-right font-mono text-gray-700">${Number(competitor.post_count).toLocaleString('id-ID')}</td>
+                  <td class="py-2.5 pr-3 text-right font-mono font-bold text-amber-600">${Number(competitor.total_engagement).toLocaleString('id-ID')}</td>
+                  <td class="py-2.5 text-center">
+                    <button type="button" class="competitor-post-toggle font-semibold text-red-600 hover:text-red-700" data-index="${idx}" aria-expanded="false">Lihat postingan</button>
+                  </td>
+                </tr>
+                <tr id="competitor-detail-${idx}" class="hidden bg-gray-50/60">
+                  <td colspan="6" class="px-3 py-3"><div data-detail-content></div></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+        container.querySelectorAll('.competitor-post-toggle').forEach((button, idx) => {
+          button.dataset.username = json.data[idx].username;
+          button.dataset.platform = json.data[idx].platform;
+          button.addEventListener('click', () => toggleCompetitorPosts(button));
+        });
       } catch (err) {
-        container.innerHTML = `<div class="text-center text-red-500 text-xs py-4">Gagal memuat: ${err.message}</div>`;
+        container.innerHTML = `<div class="text-center text-red-500 text-xs py-4">Gagal memuat: ${escapeHtml(err.message)}</div>`;
       }
     }
 

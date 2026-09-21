@@ -111,6 +111,15 @@ class TestNewAnalyticsEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["status"], "success")
 
+        detail_resp = self.client.get(
+            "/api/analytics/competitor-posts?username=not-found&platform=instagram&days=3650"
+        )
+        self.assertEqual(detail_resp.status_code, 200)
+        detail_body = detail_resp.json()
+        self.assertEqual(detail_body["status"], "success")
+        self.assertEqual(detail_body["data"]["total"], 0)
+        self.assertEqual(detail_body["data"]["posts"], [])
+
     def test_data_health_endpoint(self):
         resp = self.client.get("/api/analytics/data-health")
         self.assertEqual(resp.status_code, 200)
