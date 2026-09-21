@@ -512,11 +512,7 @@ def openai_compatible_chat(payload: ChatRequest):
                     "finish_reason": "stop",
                 }
             ],
-            "usage": {
-                "prompt_tokens": len(str(user_msg)) // 4,
-                "completion_tokens": len(reply_content) // 4,
-                "total_tokens": (len(str(user_msg)) + len(reply_content)) // 4,
-            },
+            "usage": result.get("usage"),
         }
 
     def _sse_generator():

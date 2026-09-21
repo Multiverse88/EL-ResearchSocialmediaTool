@@ -81,6 +81,19 @@ class ClaudeChatHandler:
         self.model = model or os.getenv("CLAUDE_MODEL", "Thinking")
         self.base_url = base_url or os.getenv("ANTHROPIC_BASE_URL") or os.getenv("OPENAI_API_BASE_URL")
 
+        # Explicit provider routing: CHAT_PROVIDER_MODE ("anthropic" | "openai_compatible") wins
+        # when set. Unset/invalid falls back to inferring from the key prefix and base_url, which
+        # preserves zero-config behavior for existing deployments that never set the env var.
+        configured_mode = (os.getenv("CHAT_PROVIDER_MODE") or "").strip().lower()
+        if configured_mode in ("anthropic", "openai_compatible"):
+            self.provider_mode = configured_mode
+        else:
+            is_openai_compatible = bool(self.api_key) and (
+                not self.api_key.startswith("sk-ant-")
+                or (self.base_url and "anthropic.com" not in self.base_url)
+            )
+            self.provider_mode = "openai_compatible" if is_openai_compatible else "anthropic"
+
         # Initialize Anthropic SDK only if it's a native Anthropic key
         if self.api_key and self.api_key.startswith("sk-ant-"):
             self.client = anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
@@ -122,10 +135,7 @@ class ClaudeChatHandler:
             return {"status": "error", "message": "Pesan chat tidak boleh kosong"}
 
         history = conversation_history or []
-        is_openai_router = bool(self.api_key) and (
-            not self.api_key.startswith("sk-ant-")
-            or (self.base_url and "anthropic.com" not in self.base_url)
-        )
+        is_openai_router = self.provider_mode == "openai_compatible"
         action_result = self._run_chat_actions(db, message, history, is_openai_router)
         if action_result.clarification:
             return {
@@ -261,6 +271,18 @@ class ClaudeChatHandler:
             result["reply"] = f"{prefix}\n\n{existing_reply}" if existing_reply else prefix
         return result
 
+    @staticmethod
+    def _engagement_label_value(data: Dict[str, Any]) -> Tuple[str, str]:
+        """Honest engagement label+value for display: a true percentage (label
+        "Engagement rate") when `engagement_rate` was computed from a views denominator,
+        otherwise the `engagements_per_post` fallback — a real per-post interaction count,
+        labeled accordingly and NEVER suffixed with "%" since it is not a rate."""
+        rate = data.get("engagement_rate")
+        if rate is not None:
+            return "Engagement rate", f"{rate}%"
+        per_post = data.get("engagements_per_post", 0)
+        return "Rata-rata interaksi per post (views tidak tersedia)", f"{per_post}"
+
     def stream_chat(
         self,
         db: Database,
@@ -278,10 +300,7 @@ class ClaudeChatHandler:
             yield {"type": "content", "text": "Pesan chat tidak boleh kosong"}
             return
 
-        is_openai_router = bool(self.api_key) and (
-            not self.api_key.startswith("sk-ant-")
-            or (self.base_url and "anthropic.com" not in self.base_url)
-        )
+        is_openai_router = self.provider_mode == "openai_compatible"
         from .chat_actions import has_action_intent
         if has_action_intent(message):
             events: Queue[Tuple[str, Any]] = Queue()
@@ -326,6 +345,7 @@ class ClaudeChatHandler:
         if self.client:
             try:
                 result = self._claude_tool_use_loop(db, message, history, action_result=action_result)
+                result = self._merge_action_context(result, action_result, already_grounded=True)
                 yield {"type": "content", "text": result.get("reply", "")}
             except Exception as exc:
                 logger.error(f"Error calling Claude API: {exc}. Falling back to local handler.")
@@ -875,6 +895,7 @@ Peringkat Akun Kompetitor:
                 ig_summary = db.get_topic_summary(matched_topic, platform="instagram")
                 tt_summary = db.get_topic_summary(matched_topic, platform="tiktok")
                 account_breakdown = db.get_topic_account_breakdown(matched_topic, limit=8)
+                er_label, er_value = self._engagement_label_value(topic_data)
 
                 context_text = f"""
 [DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL]:
@@ -883,7 +904,7 @@ Total Postingan Termonitor (semua platform): {topic_data.get('total_posts', 0)} 
 Rata-Rata Likes per Post: {topic_data.get('avg_likes', 0):,} likes
 Puncak Likes Tertinggi: {topic_data.get('max_likes', 0):,} likes
 Rata-Rata Views (Video TikTok/Reels): {topic_data.get('avg_views', 0):,} views
-Engagement Rate Rata-Rata: {topic_data.get('engagement_rate', 0)}%
+{er_label}: {er_value}
 
 Breakdown per Platform:
 - Instagram: {ig_summary.get('total_posts', 0)} post, rata-rata {ig_summary.get('avg_likes', 0):,} likes
@@ -985,6 +1006,7 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 
         full_content = ""
         reasoning = ""
+        usage_data: Optional[Dict[str, Any]] = None
         with httpx.Client(timeout=60.0) as client:
             with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
                 if resp.status_code != 200:
@@ -1003,6 +1025,11 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
                                     full_content += delta["content"]
                                 if "reasoning_content" in delta and delta["reasoning_content"]:
                                     reasoning += delta["reasoning_content"]
+                            # OpenAI-compatible gateways that report usage attach it to a
+                            # chunk (typically the final one, sometimes with empty choices) —
+                            # capture it if present rather than fabricating an estimate.
+                            if isinstance(chunk.get("usage"), dict):
+                                usage_data = chunk["usage"]
                         except Exception:
                             pass
 
@@ -1029,6 +1056,7 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
                 "data": topic_data,
             }],
             "reply": final_reply,
+            "usage": usage_data,
         }
 
     def stream_router_chat(self, db: Database, user_message: str, history: List[Dict[str, Any]], action_result=None):
@@ -1101,6 +1129,19 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
             yield {"type": "content", "text": fallback.get("reply", "")}
 
 
+    @staticmethod
+    def _sum_anthropic_usage(*responses) -> Dict[str, int]:
+        """Real token usage from one or more Anthropic Messages API responses, summed
+        across turns (e.g. the tool-use loop's initial + final call), in OpenAI-compatible
+        shape. Never estimated — every value comes straight from the provider response."""
+        prompt_tokens = sum(getattr(r.usage, "input_tokens", 0) or 0 for r in responses)
+        completion_tokens = sum(getattr(r.usage, "output_tokens", 0) or 0 for r in responses)
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        }
+
     def _claude_tool_use_loop(
         self,
         db: Database,
@@ -1109,6 +1150,12 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         action_result=None,
     ) -> Dict[str, Any]:
         """Multi-turn tool-use loop with Claude API."""
+        # Competitor-analysis questions get the same deterministic, grounded template as
+        # the router (`_call_openai_router`) and streaming router (`stream_router_chat`)
+        # paths, so the answer quality/format doesn't depend on which provider is active.
+        if is_competitor_analysis_intent(user_message):
+            return self._build_competitor_analysis_fallback_result(db, user_message, history)
+
         messages = list(history)
         messages.append({"role": "user", "content": user_message})
 
@@ -1117,13 +1164,7 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
 
         system_prompt = DEFAULT_SYSTEM_PROMPT
         extra_context = ""
-        is_competitor_analysis = is_competitor_analysis_intent(user_message)
-        if is_competitor_analysis:
-            competitor_text, _, _ = self._build_competitor_analysis_context_text(
-                db, user_message, history,
-            )
-            extra_context = f"\n\n{competitor_text}"
-        elif action_result:
+        if action_result:
             if action_result.matched_accounts and len(action_result.matched_accounts) >= 2:
                 multi_text, _ = self._build_multi_account_context_text(db, action_result.matched_accounts)
                 extra_context += f"\n\n{multi_text}"
@@ -1137,35 +1178,9 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
             "max_tokens": 1500,
             "system": system_prompt,
             "messages": messages,
+            "tools": CLAUDE_TOOLS_SPEC,
         }
-        if not is_competitor_analysis:
-            request_kwargs["tools"] = CLAUDE_TOOLS_SPEC
         response = self.client.messages.create(**request_kwargs)
-
-        if is_competitor_analysis:
-            final_text = "".join(
-                block.text for block in response.content if block.type == "text"
-            ).strip()
-            if not final_text:
-                return self._build_competitor_analysis_fallback_result(
-                    db, user_message, history,
-                )
-            _, _, data = self._build_competitor_analysis_context_text(
-                db, user_message, history,
-            )
-            return {
-                "status": "success",
-                "user_query": user_message,
-                "model": self.model,
-                "tool_used": "competitor_analysis",
-                "tools_used": ["competitor_analysis"],
-                "tool_results": [{
-                    "tool": "competitor_analysis",
-                    "input": {"metric": data["metric"], "platform": data["platform"]},
-                    "output": data,
-                }],
-                "reply": final_text,
-            }
 
         if response.stop_reason == "tool_use":
             tool_calls = [block for block in response.content if block.type == "tool_use"]
@@ -1213,6 +1228,7 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
                 "tools_used": tools_used,
                 "tool_results": tool_results_data,
                 "reply": final_text,
+                "usage": self._sum_anthropic_usage(response, final_response),
             }
 
         else:
@@ -1229,6 +1245,7 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
                 "tools_used": [],
                 "tool_results": [],
                 "reply": final_text,
+                "usage": self._sum_anthropic_usage(response),
             }
 
     def _local_fallback_handler(self, db: Database, message: str) -> Dict[str, Any]:
@@ -1309,14 +1326,14 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
                 avg_l = tool_res.get("avg_likes", 0)
                 max_l = tool_res.get("max_likes", 0)
                 avg_v = tool_res.get("avg_views", 0)
-                er = tool_res.get("engagement_rate", 0)
+                er_label, er_value = self._engagement_label_value(tool_res)
                 reply = (
                     f"📊 **Hasil Riset Topik: '{t}'** di Media Sosial:\n"
                     f"- Total postingan termonitor: **{total_p} post**\n"
                     f"- Rata-rata likes per post: **{avg_l:,} likes**\n"
                     f"- Puncak likes tertinggi: **{max_l:,} likes**\n"
                     f"- Rata-rata views (TikTok/Reels): **{avg_v:,} views**\n"
-                    f"- Engagement rate rata-rata: **{er}%**\n\n"
+                    f"- {er_label}: **{er_value}**\n\n"
                     f"💡 **Insight Riset**: Topik '{t}' memiliki interaksi yang kuat di media sosial. Di TikTok & Reels, video edukasi 30-60 detik berfokus pada solusi praktis menghasilkan interaksi di atas rata-rata."
                 )
                 return {
@@ -1338,12 +1355,13 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         if matched_acc:
             tool_res = execute_claude_tool(db, "get_engagement_summary", {"username": matched_acc.username, "platform": matched_acc.platform})
             s = tool_res.get("summary", {})
+            er_label, er_value = self._engagement_label_value(s)
             reply = (
                 f"Ringkasan akun @{matched_acc.username} ({matched_acc.platform}):\n"
                 f"- Total postingan: {s.get('total_posts', 0)}\n"
                 f"- Rata-rata likes: {s.get('avg_likes', 0):,}\n"
                 f"- Rata-rata views: {s.get('avg_views', 0):,}\n"
-                f"- Engagement rate: {s.get('engagement_rate', 0)}%"
+                f"- {er_label}: {er_value}"
             )
             return {
                 "status": "success",
@@ -1358,13 +1376,14 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
         words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", msg_lower) if len(w) > 2 and w not in STOP_WORDS]
         kw = words[0] if words else "pendirian PT"
         tool_res = execute_claude_tool(db, "research_topic", {"keyword": kw})
+        er_label, er_value = self._engagement_label_value(tool_res)
         reply = (
             f"📊 **Hasil Riset Kata Kunci: '{kw}'**:\n"
             f"- Total postingan: **{tool_res.get('total_posts', 0)} post**\n"
             f"- Rata-rata likes: **{tool_res.get('avg_likes', 0):,} likes**\n"
             f"- Puncak likes: **{tool_res.get('max_likes', 0):,} likes**\n"
             f"- Rata-rata views: **{tool_res.get('avg_views', 0):,} views**\n"
-            f"- Engagement rate: **{tool_res.get('engagement_rate', 0)}%**\n\n"
+            f"- {er_label}: **{er_value}**\n\n"
             f"💡 **Rekomendasi Konten**: Gunakan kata kunci '{kw}' pada baris pertama caption dan hook video 3 detik awal untuk meningkatkan retensi penonton."
         )
         return {

@@ -705,13 +705,15 @@ class Database:
         avg_views = round(row[7], 1)
         max_views = row[8]
 
-        # Engagement Rate
+        # Engagement Rate: a true percentage requires a views denominator. When views
+        # aren't available (e.g. Instagram photo posts), (likes+comments)/post_count is
+        # a real number but NOT a percentage/rate — expose it separately as
+        # `engagements_per_post` so callers never mislabel it with a "%" suffix.
         if total_views > 0:
-            er = round(((total_likes + total_comments) / total_views) * 100, 2)
-        elif total_posts > 0:
-            er = round((total_likes + total_comments) / total_posts, 1)
+            engagement_rate: Optional[float] = round(((total_likes + total_comments) / total_views) * 100, 2)
         else:
-            er = 0.0
+            engagement_rate = None
+        engagements_per_post = round((total_likes + total_comments) / total_posts, 1) if total_posts > 0 else 0.0
 
         # Fetch top viral posts for this topic
         viral_posts = self.query_posts(topic=clean_kw, platform=platform, order_by="likes", limit=5)
@@ -729,7 +731,8 @@ class Database:
             "total_views": total_views,
             "avg_views": avg_views,
             "max_views": max_views,
-            "engagement_rate": er,
+            "engagement_rate": engagement_rate,
+            "engagements_per_post": engagements_per_post,
             "viral_references": [
                 {
                     "id": p["id"],
@@ -795,6 +798,7 @@ class Database:
                     "max_likes": r["max_likes"],
                     "avg_views": r["avg_views"],
                     "engagement_rate": r["engagement_rate"],
+                    "engagements_per_post": r["engagements_per_post"],
                 }
                 for r in ranked
             ],

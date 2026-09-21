@@ -157,13 +157,16 @@ def handle_chat_message(
 
         if matched_account:
             tool_result = get_engagement_summary(db, matched_account.username, matched_account.platform)
+            summary = tool_result["summary"]
+            er = summary.get("engagement_rate")
+            er_text = f"{er}%" if er is not None else f"{summary.get('engagements_per_post', 0)} interaksi/post"
             return {
                 "status": "success",
                 "user_query": message,
                 "tool_used": "get_engagement_summary",
                 "tool_result": tool_result,
                 "reply": f"Ringkasan engagement untuk @{matched_account.username} ({matched_account.platform}): "
-                         f"Rata-rata likes {tool_result['summary']['avg_likes']}, engagement rate {tool_result['summary']['engagement_rate']}%.",
+                         f"Rata-rata likes {summary['avg_likes']}, engagement rate {er_text}.",
             }
 
     # Default to search_scraped_posts

@@ -254,7 +254,8 @@ def get_engagement_summary(
                 "avg_comments": 0.0,
                 "total_views": 0,
                 "avg_views": 0.0,
-                "engagement_rate": 0.0,
+                "engagement_rate": None,
+                "engagements_per_post": 0.0,
             },
         }
 
@@ -263,12 +264,14 @@ def get_engagement_summary(
     total_comments = summary["total_comments"]
     total_views = summary["total_views"]
 
+    # A true engagement rate (%) requires a views denominator. Without views, expose
+    # the per-post interaction count as `engagements_per_post` instead — it is a real
+    # number, but not a percentage, so it must never be rendered with a "%" suffix.
     if total_views > 0:
         engagement_rate = round(((total_likes + total_comments) / total_views) * 100, 2)
-    elif total_posts > 0:
-        engagement_rate = round(((total_likes + total_comments) / total_posts), 2)
     else:
-        engagement_rate = 0.0
+        engagement_rate = None
+    engagements_per_post = round((total_likes + total_comments) / total_posts, 2) if total_posts > 0 else 0.0
 
     top_posts = db.get_top_posts(account_id=account.id, limit=3)
 
@@ -284,6 +287,7 @@ def get_engagement_summary(
             "total_views": total_views,
             "avg_views": round(summary["avg_views"], 2),
             "engagement_rate": engagement_rate,
+            "engagements_per_post": engagements_per_post,
             "date_range": {
                 "earliest_post": summary["earliest_post"],
                 "latest_post": summary["latest_post"],
@@ -350,7 +354,8 @@ def compare_accounts(
                 "avg_comments": 0.0,
                 "total_views": 0,
                 "avg_views": 0.0,
-                "engagement_rate": 0.0,
+                "engagement_rate": None,
+                "engagements_per_post": 0.0,
             })
             continue
 
@@ -358,12 +363,14 @@ def compare_accounts(
         total_likes = sum_data["total_likes"]
         total_comments = sum_data["total_comments"]
         total_views = sum_data["total_views"]
+        # A true engagement rate (%) requires a views denominator. Without views, expose
+        # the per-post interaction count as `engagements_per_post` instead of mislabeling
+        # it as a rate/percentage.
         if total_views > 0:
             rate = round(((total_likes + total_comments) / total_views) * 100, 2)
-        elif total_posts > 0:
-            rate = round(((total_likes + total_comments) / total_posts), 2)
         else:
-            rate = 0.0
+            rate = None
+        per_post = round((total_likes + total_comments) / total_posts, 2) if total_posts > 0 else 0.0
 
         results.append({
             "username": acc.username,
@@ -378,6 +385,7 @@ def compare_accounts(
             "total_views": total_views,
             "avg_views": round(sum_data["avg_views"], 2),
             "engagement_rate": rate,
+            "engagements_per_post": per_post,
         })
 
     found_results = [r for r in results if r.get("found")]
@@ -397,6 +405,7 @@ def compare_accounts(
                 "is_own_brand": r["is_own_brand"],
                 "avg_likes": r["avg_likes"],
                 "engagement_rate": r["engagement_rate"],
+                "engagements_per_post": r["engagements_per_post"],
             }
             for r in ranked
         ],
