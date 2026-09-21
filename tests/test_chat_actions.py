@@ -108,6 +108,34 @@ class TestScrapeProfile(unittest.TestCase):
         mock_scrape.assert_called_once()
         self.assertTrue(result.receipts[0].success)
 
+    def test_brand_name_after_platform_resolves_monitored_account(self):
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        instagram = self.db.upsert_account(Account.create(
+            platform="instagram",
+            username="id.easylegal",
+            is_own_brand=True,
+            monitoring_enabled=True,
+        ))
+        self.db.upsert_account(Account.create(
+            platform="tiktok",
+            username="id.easylegal",
+            is_own_brand=True,
+            monitoring_enabled=True,
+        ))
+        _seed_post(self.db, instagram, recent)
+
+        with patch.object(ig_module, "scrape_instagram_profile") as mock_scrape:
+            result = self.orch.plan_and_execute(
+                self.db,
+                "Tampilkan data postingan Instagram akun EasyLegal untuk hari ini dan kemarin",
+                [],
+            )
+
+        mock_scrape.assert_not_called()
+        self.assertEqual(result.matched_account, ("instagram", "id.easylegal"))
+        self.assertEqual(len(result.receipts), 1)
+        self.assertTrue(result.receipts[0].used_cache)
+
     def test_generic_pronoun_after_akun_platform_does_not_misfire(self):
         # "akun tiktok kami" — no real username present, must not scrape a literal
         # account named "kami".

@@ -126,6 +126,22 @@ class TestBuildRouterContextAccountMode(unittest.TestCase):
         self.assertEqual(subject_data["total_posts"], 30)
         self.assertIn("Total Postingan Tersimpan (SEMUA post akun ini, TANPA filter kata kunci apa pun): 30 post", system_content)
 
+    def test_account_date_query_context_distinguishes_sync_from_post_date(self):
+        _, _, _, messages, _, subject_data = self.handler._build_router_context(
+            self.db,
+            "Tampilkan data postingan Instagram akun EasyLegal untuk hari ini dan kemarin",
+            [],
+            account_ref=("instagram", "id.easylegal"),
+        )
+
+        system_content = messages[0]["content"]
+        self.assertEqual(subject_data["username"], "id.easylegal")
+        self.assertEqual(subject_data["total_posts"], 30)
+        self.assertIn("Waktu Sinkronisasi Data Terakhir:", system_content)
+        self.assertIn("Tanggal Post Terbaru Tersimpan:", system_content)
+        self.assertIn("sinkronisasi yang berhasil tidak berarti akun menerbitkan post baru", system_content)
+        self.assertIn("jangan menyatakan akun belum terdaftar atau belum di-scrape", system_content)
+
     def test_account_mode_does_not_invoke_topic_keyword_resolution(self):
         with patch.object(self.handler, "_resolve_matched_topic") as mock_resolve, \
              patch.object(self.handler, "_ensure_topic_freshness") as mock_freshness:

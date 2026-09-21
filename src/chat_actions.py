@@ -290,21 +290,36 @@ def _extract_known_account_mentions(db: Database, message: str) -> List[Tuple[st
 
 
 def _resolve_brand_account(db: Database, message: str) -> Optional[Account]:
-    """Resolves an unambiguous monitored account referenced by name/brand token rather
-    than @mention (e.g. "akun EasyLegal"). Returns None when zero or multiple monitored
-    accounts match, so the caller can fall back to asking for clarification."""
+    """Resolves an unambiguous monitored account referenced by its brand token.
+
+    An explicit platform in the message narrows otherwise-ambiguous brands that use
+    the same username across Instagram, TikTok, and Threads.
+    """
+    msg_lower = message.lower()
+    requested_platform = None
+    if "instagram" in msg_lower or re.search(r"\big\b", msg_lower):
+        requested_platform = "instagram"
+    elif "tiktok" in msg_lower:
+        requested_platform = "tiktok"
+    elif "threads" in msg_lower:
+        requested_platform = "threads"
+
     words = [
-        w for w in re.findall(r"[a-zA-Z0-9_.]+", message.lower())
+        w for w in re.findall(r"[a-zA-Z0-9_.]+", msg_lower)
         if w not in _REPLACE_STOP_WORDS and len(w) > 2
     ]
-    monitored = [a for a in db.list_accounts() if a.monitoring_enabled]
+    monitored = [
+        account for account in db.list_accounts()
+        if account.monitoring_enabled
+        and (requested_platform is None or account.platform == requested_platform)
+    ]
     matches = []
     for acc in monitored:
-        for w in words:
-            if w in acc.username or acc.username in w:
+        for word in words:
+            if word in acc.username or acc.username in word:
                 matches.append(acc)
                 break
-    unique = list({a.id: a for a in matches}.values())
+    unique = list({account.id: account for account in matches}.values())
     if len(unique) == 1:
         return unique[0]
     return None
@@ -407,7 +422,10 @@ def parse_deterministic(db: Database, message: str) -> Optional[ActionPlan]:
             username, platform = bare
         elif len(known_accounts) == 1:
             platform, username = known_accounts[0]
-
+        elif re.search(r"\b(akun|profil(?:e)?)\b", msg_lower):
+            brand_account = _resolve_brand_account(db, message)
+            if brand_account:
+                platform, username = brand_account.platform, brand_account.username
     if username:
         max_posts = _extract_max_posts(message)
         force_refresh = _extract_force_refresh(message)

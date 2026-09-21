@@ -522,9 +522,9 @@ class ClaudeChatHandler:
             return text, {}
 
         summary = db.get_account_summary(acc.id) or {}
+        last_scraped_at = db.get_account_freshness(acc.id)
         top_posts = db.query_posts(account_id=acc.id, order_by="likes", limit=8)
         recent_posts = db.query_posts(account_id=acc.id, order_by="posted_at", limit=5)
-
         follower_line = (
             f"Follower Count: {acc.follower_count:,}\n" if acc.follower_count is not None
             else "Follower Count: tidak tersedia (belum tertangkap saat scraping terakhir)\n"
@@ -533,10 +533,11 @@ class ClaudeChatHandler:
 [DATA FAKTUAL HASIL SCRAPING MEDIA SOSIAL — PROFIL AKUN @{acc.username}]:
 Platform: {acc.platform.upper()}
 {follower_line}Total Postingan Tersimpan (SEMUA post akun ini, TANPA filter kata kunci apa pun): {summary.get('total_posts', 0)} post
+Waktu Sinkronisasi Data Terakhir: {last_scraped_at or 'belum tersedia'}
+Tanggal Post Terbaru Tersimpan: {summary.get('latest_post') or 'belum tersedia'}
 Rata-Rata Likes per Post: {summary.get('avg_likes', 0):,} likes
 Rata-Rata Comments per Post: {summary.get('avg_comments', 0):,} comments
 Rata-Rata Views: {summary.get('avg_views', 0):,} views
-
 Postingan dengan Likes Tertinggi:
 """
         if top_posts:
@@ -685,6 +686,9 @@ Jangan mengarang angka untuk hal-hal di atas jika ditanya user.
             f"{context_text}\n"
             f"Gunakan SEMUA data faktual di atas untuk menjawab pertanyaan tim marketing secara mendalam dan lengkap — "
             f"jangan mempersempit jawaban ke sebagian kecil data kecuali user secara eksplisit meminta kata kunci/topik tertentu. "
+            f"Bedakan waktu sinkronisasi data dari tanggal posting: sinkronisasi yang berhasil tidak berarti akun menerbitkan post baru pada hari itu. "
+            f"Jika tidak ada post dalam rentang tanggal yang diminta, katakan hanya bahwa tidak ada post pada rentang tersebut, "
+            f"lalu sebutkan tanggal post terbaru dan waktu sinkronisasi terakhir; jangan menyatakan akun belum terdaftar atau belum di-scrape bila konteks menunjukkan data tersimpan. "
             f"Sertakan insight atau ide taktis."
         )
 
