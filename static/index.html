@@ -671,12 +671,21 @@
         const th = plats.threads || {};
         const tt = plats.tiktok || {};
 
-        document.getElementById('dist-ig-posts').textContent = `${ig.posts || 0} post`;
-        document.getElementById('dist-ig-views').textContent = `${Number(ig.views || 0).toLocaleString('id-ID')} views`;
-        document.getElementById('dist-th-posts').textContent = `${th.posts || 0} post`;
-        document.getElementById('dist-th-likes').textContent = `${Number(th.likes || 0).toLocaleString('id-ID')} likes`;
-        document.getElementById('dist-tt-posts').textContent = `${tt.posts || 0} video`;
-        document.getElementById('dist-tt-views').textContent = `${Number(tt.views || 0).toLocaleString('id-ID')} views`;
+        const renderChannelStat = (postsId, metricId, platformData, postsLabel, metricLabel, metricKey) => {
+          const posts = platformData.posts || 0;
+          const postsEl = document.getElementById(postsId);
+          const metricEl = document.getElementById(metricId);
+          if (posts === 0) {
+            postsEl.textContent = 'Belum ada data';
+            metricEl.textContent = 'Belum pernah berhasil sync';
+          } else {
+            postsEl.textContent = `${posts} ${postsLabel}`;
+            metricEl.textContent = `${Number(platformData[metricKey] || 0).toLocaleString('id-ID')} ${metricLabel}`;
+          }
+        };
+        renderChannelStat('dist-ig-posts', 'dist-ig-views', ig, 'post', 'views', 'views');
+        renderChannelStat('dist-th-posts', 'dist-th-likes', th, 'post', 'likes', 'likes');
+        renderChannelStat('dist-tt-posts', 'dist-tt-views', tt, 'video', 'views', 'views');
         document.getElementById('dist-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
 
         const brands = data.brands || {};
