@@ -450,18 +450,27 @@ def get_brand_overview_stats(
     """
     cursor = db.conn.execute(sql_platforms)
     platforms_breakdown = {
-        "instagram": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0},
-        "threads": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0},
-        "tiktok": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0},
+        "instagram": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0, "account_count": 0, "usernames": []},
+        "threads": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0, "account_count": 0, "usernames": []},
+        "tiktok": {"posts": 0, "views": 0, "likes": 0, "avg_er": 0.0, "account_count": 0, "usernames": []},
     }
     for plat, count, views, likes, er in cursor.fetchall():
         if plat in platforms_breakdown:
-            platforms_breakdown[plat] = {
-                "posts": count,
-                "views": views,
-                "likes": likes,
-                "avg_er": er,
-            }
+            platforms_breakdown[plat]["posts"] = count
+            platforms_breakdown[plat]["views"] = views
+            platforms_breakdown[plat]["likes"] = likes
+            platforms_breakdown[plat]["avg_er"] = er
+
+    sql_account_counts = f"""
+        SELECT a.platform, COUNT(*), GROUP_CONCAT(a.username, ',')
+        FROM accounts a
+        WHERE a.is_own_brand = 1 {brand_filter_sql}
+        GROUP BY a.platform
+    """
+    for plat, acc_count, usernames in db.conn.execute(sql_account_counts).fetchall():
+        if plat in platforms_breakdown:
+            platforms_breakdown[plat]["account_count"] = acc_count
+            platforms_breakdown[plat]["usernames"] = usernames.split(",") if usernames else []
 
     # 3. Individual Brand Performance (EasyLegal vs EasyTax vs EasyOffice)
     brand_groups = [

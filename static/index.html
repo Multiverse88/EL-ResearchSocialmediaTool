@@ -270,7 +270,7 @@
               <div class="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
                   <span class="badge-ig text-[10px] font-bold px-2 py-0.5 rounded">INSTAGRAM</span>
-                  <div class="text-xs font-bold text-gray-800">3 Akun Resmi</div>
+                  <div class="text-xs font-bold text-gray-800" id="dist-ig-account-label">3 Akun Resmi</div>
                 </div>
                 <div class="text-right text-xs">
                   <div class="font-bold text-gray-900" id="dist-ig-posts">0 post</div>
@@ -281,7 +281,7 @@
               <div class="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
                   <span class="badge-th text-[10px] font-bold px-2 py-0.5 rounded">THREADS</span>
-                  <div class="text-xs font-bold text-gray-800">@id.easylegal</div>
+                  <div class="text-xs font-bold text-gray-800" id="dist-th-account-label">@id.easylegal</div>
                 </div>
                 <div class="text-right text-xs">
                   <div class="font-bold text-gray-900" id="dist-th-posts">0 post</div>
@@ -292,7 +292,7 @@
               <div class="p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
                   <span class="badge-tt text-[10px] font-bold px-2 py-0.5 rounded">TIKTOK</span>
-                  <div class="text-xs font-bold text-gray-800">@id.easylegal</div>
+                  <div class="text-xs font-bold text-gray-800" id="dist-tt-account-label">@id.easylegal</div>
                 </div>
                 <div class="text-right text-xs">
                   <div class="font-bold text-gray-900" id="dist-tt-posts">0 video</div>
@@ -683,9 +683,25 @@
             metricEl.textContent = `${Number(platformData[metricKey] || 0).toLocaleString('id-ID')} ${metricLabel}`;
           }
         };
+        const renderAccountLabel = (labelId, platformData) => {
+          const labelEl = document.getElementById(labelId);
+          const count = platformData.account_count || 0;
+          const usernames = platformData.usernames || [];
+          if (count === 0) {
+            labelEl.textContent = 'Belum ada akun';
+          } else if (count === 1) {
+            labelEl.textContent = `@${usernames[0]}`;
+          } else {
+            labelEl.textContent = `${count} Akun Resmi`;
+            labelEl.title = usernames.map((u) => `@${u}`).join(', ');
+          }
+        };
         renderChannelStat('dist-ig-posts', 'dist-ig-views', ig, 'post', 'views', 'views');
         renderChannelStat('dist-th-posts', 'dist-th-likes', th, 'post', 'likes', 'likes');
         renderChannelStat('dist-tt-posts', 'dist-tt-views', tt, 'video', 'views', 'views');
+        renderAccountLabel('dist-ig-account-label', ig);
+        renderAccountLabel('dist-th-account-label', th);
+        renderAccountLabel('dist-tt-account-label', tt);
         document.getElementById('dist-avg-er').textContent = `${kpis.avg_engagement_rate || 0}%`;
 
         const brands = data.brands || {};
