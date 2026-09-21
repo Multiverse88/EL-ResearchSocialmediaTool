@@ -208,6 +208,7 @@ def get_viral_leaderboard(
     is_own_brand: Optional[int] = None,
     platform: Optional[str] = None,
     topic: Optional[str] = None,
+    brand: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Returns top posts sorted by views (or likes if views null), with author info,
@@ -216,6 +217,15 @@ def get_viral_leaderboard(
     cutoff_iso = _get_cutoff_iso(days)
     norm_plat = platform.strip().lower() if platform and platform.lower() != "all" else None
     norm_topic = topic.strip().lower() if topic and topic.lower() != "all" else None
+    norm_brand = brand.strip().lower() if brand and brand.lower() != "all" else None
+    brand_aliases = {
+        "legal": "easylegal",
+        "tax": "easytax",
+        "pajak": "easytax",
+        "office": "easyoffice",
+    }
+    norm_brand = brand_aliases.get(norm_brand, norm_brand)
+    brand_pattern = f"%{norm_brand}%" if norm_brand in {"easylegal", "easytax", "easyoffice"} else None
 
     sql = """
         SELECT
@@ -238,10 +248,22 @@ def get_viral_leaderboard(
           AND (? IS NULL OR p.platform = ?)
           AND (? IS NULL OR a.is_own_brand = ?)
           AND (? IS NULL OR LOWER(p.topic) = ?)
+          AND (? IS NULL OR LOWER(a.username) LIKE ?)
         ORDER BY COALESCE(p.views, 0) DESC, p.likes DESC
         LIMIT ?
     """
-    params = (cutoff_iso, norm_plat, norm_plat, is_own_brand, is_own_brand, norm_topic, norm_topic, limit)
+    params = (
+        cutoff_iso,
+        norm_plat,
+        norm_plat,
+        is_own_brand,
+        is_own_brand,
+        norm_topic,
+        norm_topic,
+        brand_pattern,
+        brand_pattern,
+        limit,
+    )
     cursor = db.conn.execute(sql, params)
 
     leaderboard = []

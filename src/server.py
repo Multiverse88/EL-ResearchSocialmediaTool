@@ -664,11 +664,18 @@ def api_analytics_leaderboard(
     is_own_brand: Optional[int] = Query(None, description="1 for brand, 0 for competitor"),
     platform: Optional[str] = Query(None),
     topic: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None),
 ):
     """Returns top-ranking viral posts with hook previews and permalinks."""
     from .analytics import get_viral_leaderboard
     data = get_viral_leaderboard(
-        get_db(), limit=limit, days=days, is_own_brand=is_own_brand, platform=platform, topic=topic,
+        get_db(),
+        limit=limit,
+        days=days,
+        is_own_brand=is_own_brand,
+        platform=platform,
+        topic=topic,
+        brand=brand,
     )
     return {"status": "success", "count": len(data), "data": data}
 

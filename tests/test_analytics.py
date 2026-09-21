@@ -149,6 +149,42 @@ class TestAnalyticsEngine(unittest.TestCase):
         self.assertEqual(len(brand_lb), 2)
         self.assertEqual(brand_lb[0]["platform_post_id"], "post-b1")
         self.assertTrue(brand_lb[0]["is_own_brand"])
+        acc_tax = self.db.upsert_account(
+            Account.create(platform="instagram", username="id.easytax", is_own_brand=True)
+        )
+        acc_office = self.db.upsert_account(
+            Account.create(platform="instagram", username="id.easyoffice", is_own_brand=True)
+        )
+        self.db.insert_post(Post.create(
+            account_id=acc_tax.id,
+            platform="instagram",
+            platform_post_id="post-tax",
+            caption="Tips pajak untuk UMKM",
+            media_url="",
+            likes=80,
+            comments=10,
+            views=2000,
+            posted_at=datetime.now(timezone.utc).isoformat(),
+            post_url="https://instagram.com/p/tax",
+        ))
+        self.db.insert_post(Post.create(
+            account_id=acc_office.id,
+            platform="instagram",
+            platform_post_id="post-office",
+            caption="Solusi virtual office",
+            media_url="",
+            likes=60,
+            comments=5,
+            views=1500,
+            posted_at=datetime.now(timezone.utc).isoformat(),
+            post_url="https://instagram.com/p/office",
+        ))
+
+        tax_lb = get_viral_leaderboard(self.db, limit=5, days=30, brand="easytax")
+        self.assertEqual([item["username"] for item in tax_lb], ["id.easytax"])
+
+        office_lb = get_viral_leaderboard(self.db, limit=5, days=30, brand="easyoffice")
+        self.assertEqual([item["username"] for item in office_lb], ["id.easyoffice"])
     def test_get_competitor_comparison(self):
         comp = get_competitor_comparison(self.db, days=30, topic="pendirian pt")
         self.assertEqual(comp["brand_performance"]["posts_count"], 2)

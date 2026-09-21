@@ -900,12 +900,14 @@
     async function loadPostsRadar() {
       const tbody = document.getElementById('posts-table-body');
       try {
-        const platParam = currentPlatform !== 'all' ? `&platform=${currentPlatform}` : '';
-        const res = await fetch(`/api/analytics/leaderboard?limit=15&days=${currentDays}${platParam}`);
+        const platParam = currentPlatform !== 'all' ? `&platform=${encodeURIComponent(currentPlatform)}` : '';
+        const brandParam = currentBrand !== 'all' ? `&brand=${encodeURIComponent(currentBrand)}` : '';
+        const res = await fetch(`/api/analytics/leaderboard?limit=15&days=${currentDays}${platParam}${brandParam}`);
         const json = await res.json();
 
         if (json.status !== 'success' || !json.data.length) {
           tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-gray-400">Belum ada data postingan. Jalankan tombol Sync Sekarang untuk menarik konten terbaru.</td></tr>';
+          document.getElementById('radar-count-label').textContent = '0 Postingan Terverifikasi';
           return;
         }
 
