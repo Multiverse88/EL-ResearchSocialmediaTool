@@ -18,8 +18,7 @@ INSTAGRAM_POSTS_DATASET_ID = "gd_lk5ns7kz21pck8jpis"
 INSTAGRAM_REELS_DATASET_ID = "gd_lyclm20il4r5helnj"
 TIKTOK_POSTS_DATASET_ID = "gd_lu702nij2f790tmv9h"
 TIKTOK_PROFILES_DATASET_ID = "gd_l1villgoiiidt09ci"
-THREADS_POSTS_DATASET_ID = "gd_md75myxy14rihbjksa"
-THREADS_PROFILES_DATASET_ID = "gd_mde7jg3ld2h3hnnf2"
+THREADS_PROFILES_DATASET_ID = "gd_mde7jg3ld2h3hnnf2"  # profile info + embedded recent posts, one sync call
 
 
 class BrightDataError(RuntimeError):

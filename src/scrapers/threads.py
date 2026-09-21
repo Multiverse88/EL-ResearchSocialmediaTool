@@ -7,7 +7,6 @@ from ..models import Account, ScrapeLog
 from ..db import Database
 from ..ingest import ingest_scraped_batch
 from .bright_data_client import (
-    THREADS_POSTS_DATASET_ID,
     THREADS_PROFILES_DATASET_ID,
     is_bright_data_configured,
     run_dataset,
@@ -16,55 +15,36 @@ from .bright_data_client import (
 logger = logging.getLogger("scrapers.threads")
 
 
-def _bright_data_item_to_raw_post(item: Dict[str, Any], username: str) -> Optional[Dict[str, Any]]:
-    """Adapts a Bright Data Threads post record to the ingestion contract.
+def _bright_data_item_to_raw_post(
+    item: Dict[str, Any], username: str, profile_url: str,
+) -> Optional[Dict[str, Any]]:
+    """Adapts one entry of the Threads Profiles dataset's embedded `threads` list to the
+    ingestion contract. Field names below are confirmed live (2026-09-21) against a real
+    Bright Data response for @id.easylegal — not guesses.
 
-    NOTE: Threads' exact field names have not been confirmed against a live response
-    (Bright Data trial account was congested during development). Each value below tries
-    several plausible field-name candidates, matching the defensive pattern already used
-    for the Instagram/TikTok adapters — verify against a real response and tighten once
-    Bright Data is reachable.
+    This dataset has no per-post id or permalink, and individual posts usually carry
+    null likes/comments (Threads' own public surface mostly omits them, confirmed: 3 of
+    4 real posts had null likes) — we report 0 rather than fabricate a number, and fall
+    back to the profile URL for the permalink since there's nothing more specific.
     """
     if item.get("error"):
         return None
-    post_id = item.get("post_id") or item.get("id") or item.get("thread_id")
-    if not post_id:
+    post_date = item.get("post_date")
+    if not post_date:
         return None
-    likes = item.get("likes") or item.get("num_likes") or item.get("like_count") or 0
-    comments = item.get("comments") or item.get("num_comments") or item.get("comment_count") or item.get("replies") or 0
-    posted_at = (
-        item.get("date_posted") or item.get("post_time") or item.get("timestamp") or item.get("created_at")
-    )
+    profile_id = item.get("profile_id") or username
+    likes = item.get("likes")
+    comments = item.get("comments_amount")
     return {
-        "id": str(post_id),
-        "caption": item.get("post_content") or item.get("content") or item.get("text") or item.get("description") or "",
-        "media_url": item.get("image_url") or item.get("video_url") or item.get("thumbnail") or "",
-        "post_url": item.get("url") or item.get("post_url") or f"https://www.threads.com/@{username}/post/{post_id}",
-        "likes": max(0, int(likes or 0)),
-        "comments": max(0, int(comments or 0)),
+        "id": f"{profile_id}_{post_date}",
+        "caption": item.get("post_content_formatted") or "",
+        "media_url": "",
+        "post_url": profile_url,
+        "likes": max(0, int(likes)) if likes is not None else 0,
+        "comments": max(0, int(comments)) if comments is not None else 0,
         "views": None,
-        "posted_at": posted_at,
+        "posted_at": post_date,
     }
-
-
-def _fetch_threads_follower_count(username: str) -> Optional[int]:
-    """Fetches follower count via Bright Data's Threads Profiles dataset (separate from
-    the Posts dataset). Best-effort: any failure here is logged and swallowed — a missing
-    follower count never fails the post scrape."""
-    try:
-        items = run_dataset(
-            THREADS_PROFILES_DATASET_ID,
-            [{"url": f"https://www.threads.com/@{username}"}],
-        )
-        for item in items:
-            if item.get("error"):
-                continue
-            followers = item.get("followers") or item.get("num_followers") or item.get("follower_count")
-            if followers is not None:
-                return int(followers)
-    except Exception as exc:
-        logger.warning("Bright Data Threads follower count fetch failed for @%s: %s", username, exc)
-    return None
 
 
 def _scrape_threads_profile_bright_data(
@@ -72,25 +52,51 @@ def _scrape_threads_profile_bright_data(
     account: Account,
     max_posts: int,
 ) -> Tuple[int, Optional[str]]:
-    """Scrapes a Threads profile through Bright Data post discovery."""
+    """Scrapes a Threads profile through Bright Data's Profiles dataset — a single
+    synchronous call (confirmed live 2026-09-21, ~10-20s) that returns profile info,
+    follower count, AND recent posts together in one response.
+
+    Replaces the previous two-call approach: a separate async "profile" discovery
+    collector for posts (verified live to routinely take 300s+ per token and, on
+    2026-09-21, to sit "running" at Bright Data's own progress endpoint for 30+ minutes
+    without ever completing across both configured tokens) plus a second call for
+    follower count. That collector's field-name mapping had also never actually been
+    confirmed against a real response (see git history) — every attempt had failed
+    before a payload could be inspected.
+    """
     username = account.username.strip().lstrip("@")
-    logger.info("Starting Threads scrape (Bright Data) for @%s (limit=%s)", username, max_posts)
+    profile_url = f"https://www.threads.com/@{username}"
+    logger.info("Starting Threads scrape (Bright Data Profiles) for @%s (limit=%s)", username, max_posts)
 
     try:
         items = run_dataset(
-            THREADS_POSTS_DATASET_ID,
-            [{"profile_url": f"https://www.threads.com/@{username}"}],
-            query={"type": "discover_new", "discover_by": "profile"},
-            # Threads' "profile" discovery collector is verified (live, 2026-09-20) to
-            # routinely take 200s+ per token to complete — much slower than Instagram/
-            # TikTok's "url"-based discovery. The default 180s budget cuts it off right
-            # before completion; 300s gives it a realistic chance without hanging forever.
-            timeout=300.0,
+            THREADS_PROFILES_DATASET_ID,
+            [{"url": profile_url}],
+            query={"notify": "false"},
         )
+        profile = items[0] if items else None
+        if not profile or profile.get("error"):
+            err_msg = (
+                f"Bright Data returned no usable Threads profile for @{username} "
+                "(profile may be private, empty, or not found)"
+            )
+            logger.warning(err_msg)
+            db.insert_scrape_log(
+                ScrapeLog.create(platform="threads", status="failed", error_message=err_msg, target=username)
+            )
+            return 0, err_msg
+
+        follower_count = profile.get("number_of_followers")
+        if follower_count is not None:
+            db.update_account_follower_count(account.id, int(follower_count))
+
+        thread_items = profile.get("threads") or []
         raw_posts: List[Dict[str, Any]] = [
-            post for post in (_bright_data_item_to_raw_post(item, username) for item in items)
+            post for post in (
+                _bright_data_item_to_raw_post(item, username, profile_url) for item in thread_items[:max_posts]
+            )
             if post is not None
-        ][:max_posts]
+        ]
         if not raw_posts:
             err_msg = (
                 f"Bright Data returned no usable Threads posts for @{username} "
@@ -102,10 +108,6 @@ def _scrape_threads_profile_bright_data(
             )
             return 0, err_msg
 
-        follower_count = _fetch_threads_follower_count(username)
-        if follower_count is not None:
-            db.update_account_follower_count(account.id, follower_count)
-
         inserted_count, err = ingest_scraped_batch(
             db=db,
             platform="threads",
@@ -116,7 +118,7 @@ def _scrape_threads_profile_bright_data(
             logger.error("Ingestion error for Threads @%s: %s", username, err)
             return 0, err
         logger.info(
-            "Successfully scraped (Bright Data) and stored %s Threads posts for @%s",
+            "Successfully scraped (Bright Data Profiles) and stored %s Threads posts for @%s",
             inserted_count,
             username,
         )
