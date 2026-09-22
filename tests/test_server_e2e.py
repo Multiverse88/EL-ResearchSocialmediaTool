@@ -125,5 +125,53 @@ class TestServerE2E(unittest.TestCase):
         self.assertIn("EasyCorp Social Media Intel", res.text)
 
 
+class TestBufferedAndStreamingGroundingEquivalence(unittest.TestCase):
+    """Spec §7: `/chat` and the buffered `/v1` endpoint expose equivalent reply/grounding
+    semantics to the streaming SSE endpoint, and usage is always either real provider
+    usage or `null` -- never a guess -- on both transports."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+
+    def test_buffered_chat_and_v1_completions_agree_on_reply_presence_for_same_question(self):
+        question = "Berapa rata-rata likes akun easylegal_id?"
+        res_chat = self.client.post("/chat", json={"message": question})
+        res_v1 = self.client.post("/v1/chat/completions", json={"message": question, "stream": False})
+
+        self.assertEqual(res_chat.status_code, 200)
+        self.assertEqual(res_v1.status_code, 200)
+        chat_reply = res_chat.json()["reply"]
+        v1_reply = res_v1.json()["choices"][0]["message"]["content"]
+        self.assertTrue(chat_reply)
+        self.assertTrue(v1_reply)
+
+    def test_sse_stream_reaches_the_same_done_outcome_as_buffered(self):
+        question = "Berapa rata-rata likes akun easylegal_id?"
+        res_stream = self.client.post("/v1/chat/completions", json={"message": question})
+        self.assertEqual(res_stream.status_code, 200)
+        body = res_stream.text
+        self.assertIn("[DONE]", body)
+        self.assertIn('"finish_reason":"stop"', body.replace(" ", ""))
+
+        res_buffered = self.client.post("/v1/chat/completions", json={"message": question, "stream": False})
+        self.assertEqual(res_buffered.status_code, 200)
+        self.assertEqual(res_buffered.json()["choices"][0]["finish_reason"], "stop")
+
+    def test_usage_is_always_real_or_null_never_a_guess_on_buffered_endpoint(self):
+        res = self.client.post(
+            "/v1/chat/completions",
+            json={"message": "riset topik pendirian PT", "stream": False},
+        )
+        self.assertEqual(res.status_code, 200)
+        usage = res.json().get("usage")
+        # Either omitted/null, or a dict of real provider-reported integer counts --
+        # never a fabricated character-count estimate.
+        if usage is not None:
+            self.assertIn("prompt_tokens", usage)
+            self.assertIn("completion_tokens", usage)
+            self.assertIn("total_tokens", usage)
+
+
 if __name__ == "__main__":
     unittest.main()

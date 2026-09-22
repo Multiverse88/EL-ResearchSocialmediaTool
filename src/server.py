@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
@@ -420,11 +421,13 @@ def chat_endpoint(payload: ChatRequest):
     if not user_msg:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
+    request_id = str(uuid.uuid4())
     try:
         result = get_claude_handler().process_chat(
             db=get_db(),
             message=user_msg,
             conversation_history=payload.messages[:-1] if payload.messages else None,
+            request_id=request_id,
         )
     except Exception as exc:
         # Chat is user-facing: an unhandled exception anywhere in the answer pipeline
@@ -489,10 +492,11 @@ def openai_compatible_chat(payload: ChatRequest):
     model_name = payload.model or "social-media-claude-agent"
     db_inst = get_db()
     handler = get_claude_handler()
+    request_id = str(uuid.uuid4())
 
     if payload.stream is False:
         try:
-            result = handler.process_chat(db=db_inst, message=str(user_msg), conversation_history=history)
+            result = handler.process_chat(db=db_inst, message=str(user_msg), conversation_history=history, request_id=request_id)
         except Exception as exc:
             logger.error(f"Unhandled error in buffered /v1/chat/completions for message {user_msg!r}: {exc}", exc_info=True)
             result = {"reply": "Maaf, terjadi kesalahan internal saat memproses permintaan Anda. Silakan coba lagi."}
@@ -531,7 +535,7 @@ def openai_compatible_chat(payload: ChatRequest):
 
         yield _chunk({"role": "assistant"})
         try:
-            for piece in handler.stream_chat(db=db_inst, message=str(user_msg), conversation_history=history):
+            for piece in handler.stream_chat(db=db_inst, message=str(user_msg), conversation_history=history, request_id=request_id):
                 text = piece.get("text", "")
                 if not text:
                     continue

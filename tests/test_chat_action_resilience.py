@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from src.claude_client import ClaudeChatHandler
 from src.db import Database
 from src.server import app
-from src.chat_actions import ActionExecutionResult
+from src.chat_actions import ActionExecutionResult, ActionReceipt
+from src.models import Account, Post
 
 
 class TestChatActionOrchestrationNeverCrashesChat(unittest.TestCase):
@@ -99,6 +100,115 @@ class TestChatEndpointNeverReturns500(unittest.TestCase):
             )
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res.json()["choices"][0]["message"]["content"])
+
+
+class TestActionReceiptsSurviveDegradedProviderPaths(unittest.TestCase):
+    """Spec §7: action receipts must survive a router failure, an empty stream, a
+    malformed chunk, and a deterministic fallback -- an action that already executed
+    (e.g. a scrape) must never be silently dropped just because the answering
+    provider degraded afterward."""
+
+    def setUp(self):
+        self.db = Database(":memory:")
+        self.acc = self.db.upsert_account(Account.create(platform="instagram", username="id.easylegal", is_own_brand=True))
+        self.db.upsert_posts([
+            Post.create(account_id=self.acc.id, platform_post_id="1", caption="tips legalitas",
+                        media_url="", likes=10, comments=1, views=None, platform="instagram"),
+        ])
+
+    def tearDown(self):
+        self.db.close()
+
+    def _action_result(self):
+        receipt = ActionReceipt(
+            action_type="scrape_profile", platform="instagram", target="id.easylegal",
+            backend="bright_data", success=True, posts_collected=5, detail="Scraped 5 posts",
+        )
+        return ActionExecutionResult(receipts=[receipt], matched_account=("instagram", "id.easylegal"), status_lines=["Scraped 5 posts"])
+
+    def test_receipts_survive_router_http_failure(self):
+        handler = ClaudeChatHandler(api_key="fake-router-key", base_url="https://router.example/v1")
+        with patch.object(handler, "_run_chat_actions", return_value=self._action_result()), \
+             patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.side_effect = RuntimeError("router unreachable")
+            result = handler.process_chat(self.db, "bagaimana performa akun id.easylegal?", [])
+
+        self.assertEqual(result["action_receipts"][0]["target"], "id.easylegal")
+        self.assertTrue(result["action_receipts"][0]["success"])
+        self.assertTrue(result["reply"])
+
+    def test_receipts_survive_empty_router_stream(self):
+        handler = ClaudeChatHandler(api_key="fake-router-key", base_url="https://router.example/v1")
+
+        class _EmptyStreamCtx:
+            status_code = 200
+
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def iter_lines(self_inner):
+                return iter(["data: [DONE]"])
+
+        class _EmptyHttpxClient:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def stream(self_inner, method, url, headers=None, json=None):
+                return _EmptyStreamCtx()
+
+        with patch.object(handler, "_run_chat_actions", return_value=self._action_result()), \
+             patch("httpx.Client", return_value=_EmptyHttpxClient()):
+            result = handler.process_chat(self.db, "bagaimana performa akun id.easylegal?", [])
+
+        self.assertEqual(result["action_receipts"][0]["target"], "id.easylegal")
+        self.assertTrue(result["reply"])
+
+    def test_receipts_survive_malformed_router_chunk(self):
+        handler = ClaudeChatHandler(api_key="fake-router-key", base_url="https://router.example/v1")
+
+        class _MalformedStreamCtx:
+            status_code = 200
+
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def iter_lines(self_inner):
+                return iter(["data: {not valid json", "data: [DONE]"])
+
+        class _MalformedHttpxClient:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def stream(self_inner, method, url, headers=None, json=None):
+                return _MalformedStreamCtx()
+
+        with patch.object(handler, "_run_chat_actions", return_value=self._action_result()), \
+             patch("httpx.Client", return_value=_MalformedHttpxClient()):
+            result = handler.process_chat(self.db, "bagaimana performa akun id.easylegal?", [])
+
+        self.assertEqual(result["action_receipts"][0]["target"], "id.easylegal")
+        self.assertTrue(result["reply"])
+
+    def test_receipts_survive_deterministic_local_fallback(self):
+        handler = ClaudeChatHandler(api_key="")
+        with patch.object(handler, "_run_chat_actions", return_value=self._action_result()):
+            result = handler.process_chat(self.db, "bagaimana performa akun id.easylegal?", [])
+
+        self.assertEqual(result["action_receipts"][0]["target"], "id.easylegal")
+        self.assertTrue(result["action_receipts"][0]["success"])
+        self.assertTrue(result["reply"])
 
 
 if __name__ == "__main__":

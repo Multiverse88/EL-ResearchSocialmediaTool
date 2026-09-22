@@ -51,7 +51,8 @@ class TestExplicitProviderMode(unittest.TestCase):
         db = Database(":memory:")
         try:
             with patch.object(handler, "_call_openai_router") as router, \
-                 patch.object(handler, "_claude_tool_use_loop") as claude_loop:
+                 patch.object(handler, "_claude_tool_use_loop") as claude_loop, \
+                 patch("src.scrapers.keyword_scraper.scrape_topic_content", return_value={"total_posts_added": 0}):
                 # provider_mode="anthropic" forces the native path even though
                 # self.client is None for a non sk-ant- key, exercising the local
                 # fallback rather than the router — proving is_openai_router is now
@@ -136,21 +137,25 @@ class TestEngagementMetricRenaming(unittest.TestCase):
             Post.create(account_id=acc.id, platform_post_id="1", caption="tips pendirian pt yang benar",
                         media_url="", likes=40, comments=4, views=None, platform="instagram"),
         ])
-        result = handler.process_chat(self.db, "riset topik pendirian PT dong", [])
+        with patch("src.scrapers.keyword_scraper.scrape_topic_content", return_value={"total_posts_added": 0}):
+            result = handler.process_chat(self.db, "riset topik pendirian PT dong", [])
         self.assertEqual(result["tool_used"], "research_topic")
         self.assertNotIn("%", result["reply"])
-        self.assertIn("interaksi per post", result["reply"])
+        self.assertIn("40 likes", result["reply"])
 
-    def test_local_fallback_reply_appends_percent_with_views(self):
+    def test_local_fallback_with_views_reports_observed_post_metrics_not_derived_rate(self):
         handler = ClaudeChatHandler(api_key="")
         acc = self.db.upsert_account(Account.create(platform="tiktok", username="videoacc2", is_own_brand=True))
         self.db.upsert_posts([
             Post.create(account_id=acc.id, platform_post_id="1", caption="tips pendirian pt di tiktok",
                         media_url="", likes=100, comments=10, views=1000, platform="tiktok"),
         ])
-        result = handler.process_chat(self.db, "riset topik pendirian PT dong", [])
+        with patch("src.scrapers.keyword_scraper.scrape_topic_content", return_value={"total_posts_added": 0}):
+            result = handler.process_chat(self.db, "riset topik pendirian PT dong", [])
         self.assertEqual(result["tool_used"], "research_topic")
-        self.assertIn("Engagement rate: **11.0%**", result["reply"])
+        self.assertIn("100 likes", result["reply"])
+        self.assertIn("1,000 views", result["reply"])
+        self.assertNotIn("Engagement rate", result["reply"])
 
 
 class TestUsageNeverFabricated(unittest.TestCase):
@@ -213,12 +218,16 @@ class TestUsageNeverFabricated(unittest.TestCase):
                     return _FakeStreamCtx()
 
             action_result = ActionExecutionResult(matched_topic="pendirian pt")
+            turn = handler._prepare_turn(db, "req-1", "riset topik pendirian PT", [], action_result)
             with patch("httpx.Client", return_value=_FakeHttpxClient()):
-                result = handler._call_openai_router(db, "riset topik pendirian PT", [], action_result=action_result)
+                result = handler._call_openai_router(db, turn)
         finally:
             db.close()
 
-        self.assertEqual(result["usage"], {"prompt_tokens": 120, "completion_tokens": 40, "total_tokens": 160})
+        self.assertEqual(
+            (result.usage.prompt_tokens, result.usage.completion_tokens, result.usage.total_tokens),
+            (120, 40, 160),
+        )
 
     def test_claude_tool_use_loop_reports_real_anthropic_usage(self):
         handler = ClaudeChatHandler(api_key="sk-ant-faketestkey")
@@ -232,13 +241,14 @@ class TestUsageNeverFabricated(unittest.TestCase):
 
             with patch.object(handler.client, "messages") as messages_mock:
                 messages_mock.create.return_value = fake_response
-                result = handler._claude_tool_use_loop(db, "halo, apa kabar", [])
+                turn = handler._prepare_turn(db, "req-1", "halo, apa kabar", [], None)
+                result = handler._claude_tool_use_loop(db, turn)
         finally:
             db.close()
 
         self.assertEqual(
-            result["usage"],
-            {"prompt_tokens": 250, "completion_tokens": 80, "total_tokens": 330},
+            (result.usage.prompt_tokens, result.usage.completion_tokens, result.usage.total_tokens),
+            (250, 80, 330),
         )
 
 
@@ -266,20 +276,24 @@ class TestCompetitorAnalysisUnifiedAcrossProviders(unittest.TestCase):
 
     def test_native_claude_path_never_calls_the_model_for_competitor_questions(self):
         message = "apa konten kompetitor id.easylegal yang views nya besar dan bisa diamati tiru dan dimodifikasi"
+        turn = self.handler._prepare_turn(self.db, "req-1", message, [], None)
+        self.assertEqual(turn.subject.kind, "competitor")
         with patch.object(self.handler.client, "messages") as messages_mock:
-            result = self.handler._claude_tool_use_loop(self.db, message, [])
+            result = self.handler._claude_tool_use_loop(self.db, turn)
         messages_mock.create.assert_not_called()
-        self.assertEqual(result["tool_used"], "competitor_analysis")
-        self.assertEqual(result["tools_used"], ["competitor_analysis"])
-        self.assertIn("**AMATI**", result["reply"])
-        self.assertIn("**TIRU**", result["reply"])
+        self.assertEqual(result.tool_calls[0].name, "competitor_analysis")
+        self.assertIn("**AMATI**", result.text)
+        self.assertIn("**TIRU**", result.text)
 
-    def test_native_claude_path_matches_router_fallback_template(self):
+    def test_competitor_template_is_identical_across_all_provider_adapters(self):
         message = "apa konten kompetitor id.easylegal yang views nya besar dan bisa diamati tiru dan dimodifikasi"
+        turn = self.handler._prepare_turn(self.db, "req-1", message, [], None)
         with patch.object(self.handler.client, "messages"):
-            native_result = self.handler._claude_tool_use_loop(self.db, message, [])
-        expected = self.handler._build_competitor_analysis_fallback_result(self.db, message, [])
-        self.assertEqual(native_result["reply"], expected["reply"])
+            native_result = self.handler._claude_tool_use_loop(self.db, turn)
+        router_result = self.handler._call_openai_router(self.db, turn)
+        local_result = self.handler._local_fallback_handler(self.db, turn)
+        self.assertEqual(native_result.text, router_result.text)
+        self.assertEqual(native_result.text, local_result.text)
 
 
 class TestActionReceiptsPreservedOnEveryStreamingPath(unittest.TestCase):
@@ -293,32 +307,22 @@ class TestActionReceiptsPreservedOnEveryStreamingPath(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def test_stream_chat_merges_action_context_on_native_claude_success_path(self):
+    def test_stream_chat_and_process_chat_both_preserve_action_receipts_and_reply(self):
+        from src.claude_client import AssistantStep
         receipt = ActionReceipt(
             action_type="scrape_profile", platform="instagram", target="id.easylegal",
             backend="bright_data", success=True, posts_collected=5, detail="Scraped 5 posts",
         )
         action_result = ActionExecutionResult(receipts=[receipt], status_lines=["Scraped 5 posts"])
-
-        captured = {}
-        real_merge = self.handler._merge_action_context
-
-        def spy_merge(result, ar, already_grounded=False):
-            merged = real_merge(result, ar, already_grounded=already_grounded)
-            captured["result"] = merged
-            captured["already_grounded"] = already_grounded
-            return merged
+        fake_step = AssistantStep(text="Jawaban asli dari Claude.", tool_calls=[], usage=None)
 
         with patch.object(self.handler, "_run_chat_actions", return_value=action_result), \
-             patch.object(self.handler, "_claude_tool_use_loop",
-                           return_value={"status": "success", "reply": "Jawaban asli dari Claude.",
-                                         "tool_used": None, "tools_used": [], "tool_results": []}), \
-             patch.object(self.handler, "_merge_action_context", side_effect=spy_merge) as merge_spy:
+             patch.object(self.handler, "_claude_tool_use_loop", return_value=fake_step):
             chunks = list(self.handler.stream_chat(self.db, "bagaimana performa akun id.easylegal?", []))
+            buffered = self.handler.process_chat(self.db, "bagaimana performa akun id.easylegal?", [])
 
-        merge_spy.assert_called_once()
-        self.assertTrue(captured["already_grounded"])
-        self.assertEqual(captured["result"]["action_receipts"][0]["target"], "id.easylegal")
+        self.assertEqual(buffered["action_receipts"][0]["target"], "id.easylegal")
+        self.assertTrue(buffered["action_receipts"][0]["success"])
         content_text = "".join(c["text"] for c in chunks if c.get("type") == "content")
         self.assertIn("Jawaban asli dari Claude.", content_text)
 

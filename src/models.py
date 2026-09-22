@@ -1,9 +1,126 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, TypedDict
 import uuid
+
+if TYPE_CHECKING:
+    from .chat_actions import ActionExecutionResult
+
+
+class ChatMessage(TypedDict):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+FreshnessStatus = Literal[
+    "fresh",
+    "stale",
+    "refreshed",
+    "refresh_failed",
+    "disabled",
+    "unknown",
+]
+
+
+@dataclass(frozen=True)
+class Subject:
+    kind: Literal["topic", "account", "accounts", "competitor", "none"]
+    keys: List[str]
+    confidence: float
+    resolution_source: Literal["explicit", "history", "action", "classifier"]
+
+
+@dataclass(frozen=True)
+class FreshnessInfo:
+    status: FreshnessStatus
+    data_as_of: Optional[str]
+    ttl_hours: float
+    error: Optional[str]
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    source_id: str
+    source_kind: Literal["post", "account"]
+    platform: Literal["instagram", "tiktok", "threads"]
+    account: Optional[str]
+    topic: Optional[str]
+    metrics: Dict[str, Optional[int]]
+    posted_at: Optional[str]
+    scraped_at: str
+    url: Optional[str]
+    missing_fields: List[str]
+
+
+@dataclass(frozen=True)
+class AnswerConstraints:
+    unavailable_metrics: List[str]
+    warnings: List[str]
+
+
+@dataclass(frozen=True)
+class PreparedTurn:
+    request_id: str
+    query: str
+    history: List[ChatMessage]
+    subject: Subject
+    action_result: Optional["ActionExecutionResult"]
+    freshness: FreshnessInfo
+    evidence: List[EvidenceRecord]
+    constraints: AnswerConstraints
+
+
+@dataclass(frozen=True)
+class ProviderAndModel:
+    provider: Literal["anthropic", "openai_compatible"]
+    model: str
+
+
+@dataclass(frozen=True)
+class Citation:
+    source_id: str
+    url: Optional[str]
+
+
+@dataclass(frozen=True)
+class ToolCallRecord:
+    name: str
+    normalized_input: Dict[str, Any]
+    status: Literal["success", "error"]
+    result_count: int
+    duration_ms: float
+
+
+@dataclass(frozen=True)
+class GroundingInfo:
+    freshness_status: FreshnessStatus
+    data_as_of: Optional[str]
+    evidence_count: int
+    missing_fields: List[str]
+    unsupported_claim_count: int
+
+
+@dataclass(frozen=True)
+class UsageInfo:
+    prompt_tokens: Optional[int]
+    completion_tokens: Optional[int]
+    total_tokens: Optional[int]
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    status: Literal["success", "partial", "error"]
+    reply: str
+    provider_and_model: ProviderAndModel
+    subject: Subject
+    citations: List[Citation]
+    tool_calls: List[ToolCallRecord]
+    action_receipts: List[Dict[str, Any]]
+    grounding: GroundingInfo
+    fallback_reason: Optional[str]
+    usage: Optional[UsageInfo]
 
 
 @dataclass

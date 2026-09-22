@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from src.claude_client import ClaudeChatHandler
 from src.db import Database
-from src.models import Account, Post
+from src.models import Account, Post, Subject
 
 
 class TestTopicLastScraped(unittest.TestCase):
@@ -94,17 +94,20 @@ class TestResolveMatchedTopicConfidence(unittest.TestCase):
 
     def test_filler_message_never_reaches_bright_data_or_registers_topic(self):
         with patch("src.scrapers.keyword_scraper.scrape_topic_content") as mock_scrape, \
-             patch.object(self.handler, "_build_router_context",
-                           return_value=("http://fake/v1/chat/completions", {}, "Thinking", [], "coba", {})), \
              patch("httpx.Client") as mock_client_cls:
             mock_client_cls.side_effect = RuntimeError("no network in test")
-            list(self.handler.stream_router_chat(self.db, "coba dong", []))
+            result = self.handler.process_chat(self.db, "coba dong", [])
 
         mock_scrape.assert_not_called()
         self.assertIsNone(self.db.get_topic_last_scraped("coba"))
+        self.assertTrue(result["reply"])
 
 
 class TestEnsureTopicFreshness(unittest.TestCase):
+    """`_ensure_topic_freshness` must return a `FreshnessInfo` distinguishing all six
+    statuses -- critically, a failed refresh (`refresh_failed`) must never be
+    indistinguishable from "no refresh was attempted" (`unknown`/`disabled`)."""
+
     def setUp(self):
         self.db = Database(":memory:")
         self.handler = ClaudeChatHandler(api_key="fake-router-key", base_url="https://router.example/v1")
@@ -119,56 +122,76 @@ class TestEnsureTopicFreshness(unittest.TestCase):
     def test_triggers_scrape_when_topic_never_scraped(self):
         with patch("src.scrapers.keyword_scraper.scrape_topic_content",
                    return_value={"total_posts_added": 4}) as mock_scrape:
-            status = self.handler._ensure_topic_freshness(self.db, "izin usaha baru")
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha baru")
 
         mock_scrape.assert_called_once()
-        self.assertIsNotNone(status)
-        self.assertIn("izin usaha baru", status)
+        self.assertEqual(info.status, "refreshed")
+        self.assertIsNone(info.error)
 
     def test_skips_scrape_when_data_is_fresh(self):
         recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         with patch.object(self.db, "get_topic_last_scraped", return_value=recent), \
              patch("src.scrapers.keyword_scraper.scrape_topic_content") as mock_scrape:
-            status = self.handler._ensure_topic_freshness(self.db, "izin usaha")
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha")
 
         mock_scrape.assert_not_called()
-        self.assertIsNone(status)
+        self.assertEqual(info.status, "fresh")
+        self.assertEqual(info.data_as_of, recent)
 
     def test_triggers_scrape_when_data_is_stale(self):
         old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
         with patch.object(self.db, "get_topic_last_scraped", return_value=old), \
              patch("src.scrapers.keyword_scraper.scrape_topic_content",
                    return_value={"total_posts_added": 2}) as mock_scrape:
-            status = self.handler._ensure_topic_freshness(self.db, "izin usaha")
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha")
 
         mock_scrape.assert_called_once()
-        self.assertIsNotNone(status)
+        self.assertEqual(info.status, "refreshed")
 
     def test_respects_custom_staleness_window(self):
         os.environ["TOPIC_STALENESS_HOURS"] = "72"
         old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
         with patch.object(self.db, "get_topic_last_scraped", return_value=old), \
              patch("src.scrapers.keyword_scraper.scrape_topic_content") as mock_scrape:
-            status = self.handler._ensure_topic_freshness(self.db, "izin usaha")
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha")
 
         mock_scrape.assert_not_called()
-        self.assertIsNone(status)
+        self.assertEqual(info.status, "fresh")
+        self.assertEqual(info.ttl_hours, 72.0)
 
-    def test_disabled_via_env_flag(self):
+    def test_disabled_via_env_flag_is_distinguishable_from_unknown(self):
         os.environ["ENABLE_LIVE_SCRAPE_ON_CHAT"] = "false"
         with patch("src.scrapers.keyword_scraper.scrape_topic_content") as mock_scrape:
-            status = self.handler._ensure_topic_freshness(self.db, "izin usaha baru")
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha baru")
 
         mock_scrape.assert_not_called()
-        self.assertIsNone(status)
+        self.assertEqual(info.status, "disabled")
+        self.assertIsNone(info.data_as_of)
 
-    def test_scrape_failure_is_swallowed_not_raised(self):
+    def test_scrape_failure_is_reported_as_refresh_failed_not_swallowed(self):
         with patch("src.scrapers.keyword_scraper.scrape_topic_content", side_effect=RuntimeError("boom")):
-            status = self.handler._ensure_topic_freshness(self.db, "izin usaha baru")
-        self.assertIsNone(status)
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha baru")
+
+        self.assertEqual(info.status, "refresh_failed")
+        self.assertIsNotNone(info.error)
+        # User-safe: never a raw exception string or internal identifier.
+        self.assertNotIn("boom", info.error)
+
+    def test_refresh_failed_keeps_the_stale_data_age_distinct_from_unknown(self):
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        with patch.object(self.db, "get_topic_last_scraped", return_value=old), \
+             patch("src.scrapers.keyword_scraper.scrape_topic_content", side_effect=RuntimeError("boom")):
+            info = self.handler._ensure_topic_freshness(self.db, "izin usaha")
+
+        self.assertEqual(info.status, "refresh_failed")
+        self.assertEqual(info.data_as_of, old)
 
 
-class TestStreamRouterChatYieldsFreshnessStatus(unittest.TestCase):
+class TestPreparedTurnFreshnessAcrossSubjects(unittest.TestCase):
+    """`_resolve_freshness` gives every subject kind (not just topics) a real decision
+    (spec §5.1 rule 1), and `data_as_of` reflects scrape time while each cited post
+    keeps its own `posted_at` publish time."""
+
     def setUp(self):
         self.db = Database(":memory:")
         self.handler = ClaudeChatHandler(api_key="fake-router-key", base_url="https://router.example/v1")
@@ -176,17 +199,43 @@ class TestStreamRouterChatYieldsFreshnessStatus(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def test_yields_freshness_status_before_router_call(self):
-        fake_status = "🔍 Mengambil data terbaru...\n\n"
-        with patch.object(self.handler, "_resolve_matched_topic", return_value=("izin usaha", True)), \
-             patch.object(self.handler, "_ensure_topic_freshness", return_value=fake_status), \
-             patch.object(self.handler, "_build_router_context",
-                           return_value=("http://fake/v1/chat/completions", {}, "Thinking", [], "izin usaha", {})), \
-             patch("httpx.Client") as mock_client_cls:
-            mock_client_cls.side_effect = RuntimeError("no network in test")
-            chunks = list(self.handler.stream_router_chat(self.db, "cari info izin usaha", []))
+    def test_account_subject_reports_stale_when_beyond_ttl(self):
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        acc = self.db.upsert_account(Account.create(platform="instagram", username="id.easylegal", is_own_brand=True))
+        self.db.upsert_posts([
+            Post.create(account_id=acc.id, platform_post_id="1", caption="post lama",
+                        media_url="", likes=10, comments=1, views=100, platform="instagram",
+                        posted_at=old, scraped_at=old),
+        ])
+        subject = self.handler._resolve_subject(self.db, "riset akun instagram id.easylegal", [], None)
+        freshness = self.handler._resolve_freshness(self.db, subject, None)
+        self.assertEqual(freshness.status, "stale")
+        self.assertEqual(freshness.data_as_of, old)
 
-        self.assertEqual(chunks[0], {"type": "reasoning", "text": fake_status})
+    def test_account_subject_unknown_when_no_data_at_all(self):
+        subject = Subject("account", ["instagram:belum_ada"], 1.0, "explicit")
+        freshness = self.handler._resolve_freshness(self.db, subject, None)
+        self.assertEqual(freshness.status, "unknown")
+        self.assertIsNone(freshness.data_as_of)
+
+    def test_data_as_of_is_scrape_time_while_post_keeps_its_own_publish_time(self):
+        scrape_time = datetime.now(timezone.utc).isoformat()
+        publish_time = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        acc = self.db.upsert_account(Account.create(platform="instagram", username="id.easylegal", is_own_brand=True))
+        self.db.upsert_posts([
+            Post.create(account_id=acc.id, platform_post_id="1", caption="post lama tapi baru disinkronkan",
+                        media_url="", likes=10, comments=1, views=100, platform="instagram",
+                        posted_at=publish_time, scraped_at=scrape_time),
+        ])
+        subject = self.handler._resolve_subject(self.db, "riset akun instagram id.easylegal", [], None)
+        freshness = self.handler._resolve_freshness(self.db, subject, None)
+        evidence = self.handler._gather_evidence(self.db, subject, "riset akun instagram id.easylegal")
+        post_evidence = [e for e in evidence if e.source_kind == "post"][0]
+
+        self.assertEqual(freshness.data_as_of, scrape_time)
+        self.assertEqual(post_evidence.posted_at, publish_time)
+        self.assertEqual(post_evidence.scraped_at, scrape_time)
+        self.assertNotEqual(post_evidence.posted_at, freshness.data_as_of)
 
 
 if __name__ == "__main__":
