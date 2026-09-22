@@ -101,6 +101,33 @@ class TestResolveMatchedTopicConfidence(unittest.TestCase):
         mock_scrape.assert_not_called()
         self.assertIsNone(self.db.get_topic_last_scraped("coba"))
         self.assertTrue(result["reply"])
+    def test_generic_help_request_resolves_no_subject_and_never_leaks_unrelated_posts(self):
+        account = self.db.upsert_account(
+            Account.create(platform="instagram", username="unrelated", is_own_brand=False)
+        )
+        self.db.insert_post(
+            Post.create(
+                account_id=account.id,
+                platform_post_id="unrelated-1",
+                caption="jelaskan fitur aplikasi",
+                media_url="",
+                likes=420,
+                comments=31,
+                views=9500,
+                platform="instagram",
+                topic="jelaskan",
+            )
+        )
+        message = "halo, jelaskan singkat fungsi sistem ini"
+        with patch("httpx.Client", side_effect=RuntimeError("no network in test")):
+            subject = self.handler._resolve_subject(self.db, message, [], None)
+            result = self.handler.process_chat(self.db, message, [])
+
+        self.assertEqual(subject.kind, "none")
+        self.assertEqual(subject.keys, [])
+        self.assertNotIn("420", result["reply"])
+        self.assertIn("belum bisa mengenali topik atau akun spesifik", result["reply"])
+
 
 
 class TestEnsureTopicFreshness(unittest.TestCase):

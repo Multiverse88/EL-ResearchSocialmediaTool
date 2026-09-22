@@ -210,6 +210,25 @@ class ClaudeChatHandler:
 
         if matched_topic:
             return matched_topic, True
+        # Explicit research syntax is sufficient evidence of intent even when the
+        # requested topic is new and the optional classifier is unavailable. Keep
+        # this narrow: generic help/greeting prose must never become a topic merely
+        # because it contains a leftover content word.
+        explicit_patterns = (
+            r"\b(?:riset|analisis|cari|teliti)\s+(?:topik|kata\s+kunci)\s+(.+)$",
+            r"\b(?:ide|contoh)\s+konten(?:\s+viral)?(?:\s+(?:untuk|tentang|soal))?\s+(.+)$",
+        )
+        trailing_fillers = {"dong", "ya", "nih", "dulu", "please", "plis"}
+        for pattern in explicit_patterns:
+            match = re.search(pattern, msg_lower)
+            if not match:
+                continue
+            candidate_words = re.findall(r"[a-zA-Z0-9_]+", match.group(1))
+            while candidate_words and candidate_words[-1] in trailing_fillers:
+                candidate_words.pop()
+            if any(len(word) > 2 and word not in STOP_WORDS for word in candidate_words):
+                return " ".join(candidate_words), True
+
 
         # No known/seeded topic substring matched the message. Before ever treating this
         # as a topic worth spending Bright Data quota on, have the AI actually read and
@@ -553,7 +572,7 @@ class ClaudeChatHandler:
             confidence = 1.0 if source in ("explicit", "history") else 0.75
             return Subject(kind="topic", keys=[matched_topic], confidence=confidence, resolution_source=source)
 
-        return Subject(kind="topic", keys=[matched_topic], confidence=0.3, resolution_source="explicit")
+        return Subject(kind="none", keys=[], confidence=0.0, resolution_source="classifier")
 
     def _ensure_topic_freshness(self, db: Database, matched_topic: str, ttl_hours: Optional[float] = None) -> FreshnessInfo:
         """
